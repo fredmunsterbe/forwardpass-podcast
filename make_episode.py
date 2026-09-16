@@ -5,7 +5,7 @@ Forward Pass — daily podcast episode maker (runs in GitHub Actions, open inter
 Flow:
   1. Find the newest AI_Daily_Brief_*.html in the Google Drive "Daily AI Brief" folder
      (read-only, via a Google service account).
-  2. Turn it into a spoken ~6-minute script with OpenAI (news-anchor style, no URLs).
+  2. Prefer BAGEHOT's spoken-script .txt for the day; else derive a script from the HTML.
   3. Render the script to MP3 with OpenAI TTS (chunked to respect the 4096-char limit).
   4. Upload + publish the episode to Transistor (which feeds Spotify via RSS).
 
@@ -16,6 +16,7 @@ Env vars (set as GitHub Actions secrets):
   DRIVE_FOLDER_ID       - the "Daily AI Brief" folder id (1v2w8Q56LpXPAmi3gXqwmaX6NVgBr3z00)
   GOOGLE_SA_JSON        - the full service-account JSON (paste as a secret)
   TTS_VOICE             - optional, defaults to "onyx"
+  FORCE                 - "1" to publish even if the newest brief isn't today's
 Deps:  pip install openai google-api-python-client google-auth requests
 """
 import os, sys, io, re, json, datetime, tempfile
@@ -29,16 +30,26 @@ OPENAI_API_KEY     = os.environ["OPENAI_API_KEY"]
 TRANSISTOR_API_KEY = os.environ["TRANSISTOR_API_KEY"]
 SHOW_ID            = os.environ["TRANSISTOR_SHOW_ID"]
 DRIVE_FOLDER_ID    = os.environ["DRIVE_FOLDER_ID"]
-VOICE              = os.environ.get("TTS_VOICE", "onyx")
+VOICE              = os.environ.get("TTS_VOICE") or "onyx"   # empty string also falls back
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-# ---------- 1. Pull the newest brief from Drive ----------
-def newest_brief_html():
+# ---------- 1. Pull from Drive ----------
+def get_drive():
     creds = service_account.Credentials.from_service_account_info(
         json.loads(os.environ["GOOGLE_SA_JSON"]),
         scopes=["https://www.googleapis.com/auth/drive.readonly"])
-    drive = build("drive", "v3", credentials=creds)
+    return build("drive", "v3", credentials=creds)
+
+def _download(drive, file_id):
+    buf = io.BytesIO()
+    dl = MediaIoBaseDownload(buf, drive.files().get_media(fileId=file_id))
+    done = False
+    while not done:
+        _, done = dl.next_chunk()
+    return buf.getvalue().decode("utf-8", "ignore")
+
+def newest_brief_html(drive):
     q = (f"'{DRIVE_FOLDER_ID}' in parents and trashed=false "
          f"and name contains 'AI_Daily_Brief_' and mimeType='text/html'")
     res = drive.files().list(q=q, orderBy="createdTime desc", pageSize=1,
@@ -47,13 +58,20 @@ def newest_brief_html():
     if not files:
         sys.exit("No brief HTML found in the Drive folder.")
     f = files[0]
-    buf = io.BytesIO()
-    dl = MediaIoBaseDownload(buf, drive.files().get_media(fileId=f["id"]))
-    done = False
-    while not done:
-        _, done = dl.next_chunk()
     print(f"Fetched {f['name']}")
-    return f["name"], buf.getvalue().decode("utf-8", "ignore")
+    return f["name"], _download(drive, f["id"])
+
+def fetch_script_text(drive, date_iso):
+    """Prefer BAGEHOT's purpose-built spoken script if it exists for this date."""
+    name = f"AI_Daily_Brief_{date_iso}_script.txt"
+    q = f"'{DRIVE_FOLDER_ID}' in parents and trashed=false and name='{name}'"
+    res = drive.files().list(q=q, orderBy="createdTime desc", pageSize=1,
+                             fields="files(id,name)").execute()
+    files = res.get("files", [])
+    if not files:
+        return None
+    print(f"Using BAGEHOT spoken script: {name}")
+    return _download(drive, files[0]["id"]).strip()
 
 def html_to_text(html):
     html = re.sub(r"(?is)<style.*?</style>", " ", html)
@@ -62,7 +80,7 @@ def html_to_text(html):
     text = re.sub(r"&amp;", "&", text); text = re.sub(r"&[a-z]+;", " ", text)
     return re.sub(r"\s+", " ", text).strip()
 
-# ---------- 2. Brief -> spoken script ----------
+# ---------- 2. Brief -> spoken script (fallback only) ----------
 def make_script(brief_text, date_label):
     prompt = f"""You are the voice of "The Forward Pass — AI Daily Brief", a ~6 minute
 daily audio brief for NTT DATA Belgium. Turn the brief below into a spoken script.
@@ -122,11 +140,27 @@ def publish(mp3_path, title, summary):
 
 # ---------- main ----------
 if __name__ == "__main__":
-    name, html = newest_brief_html()
+    drive = get_drive()
+    name, html = newest_brief_html(drive)
     m = re.search(r"(\d{4}-\d{2}-\d{2})", name)
     d = datetime.date.fromisoformat(m.group(1)) if m else datetime.date.today()
+
+    # today-only guard: don't re-voice a stale brief (e.g. a day BAGEHOT skipped).
+    try:
+        from zoneinfo import ZoneInfo
+        today = datetime.datetime.now(ZoneInfo("Europe/Brussels")).date()
+    except Exception:
+        today = datetime.date.today()
+    if d != today and os.environ.get("FORCE", "").lower() not in ("1", "true", "yes"):
+        print(f"Newest brief is {d} (not today {today}); skipping. Set FORCE=1 to override.")
+        sys.exit(0)
+
     date_label = d.strftime("%A, %B %-d, %Y")
-    script = make_script(html_to_text(html), date_label)
+    # Prefer BAGEHOT's purpose-built spoken script; fall back to deriving from the HTML.
+    script = fetch_script_text(drive, d.isoformat())
+    if not script:
+        print("No spoken script on Drive; generating from the brief HTML.")
+        script = make_script(html_to_text(html), date_label)
     print(f"Script: {len(script.split())} words")
     mp3 = os.path.join(tempfile.gettempdir(), f"forwardpass_{d.isoformat()}.mp3")
     synth(script, mp3)
