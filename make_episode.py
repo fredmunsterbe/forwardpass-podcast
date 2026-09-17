@@ -5,7 +5,7 @@ Forward Pass — daily podcast episode maker (runs in GitHub Actions, open inter
 Flow:
   1. Find the newest AI_Daily_Brief_*.html in the Google Drive "Daily AI Brief" folder
      (read-only, via a Google service account).
-  2. Prefer BAGEHOT's spoken-script .txt for the day; else derive a script from the HTML.
+  2. Turn it into a spoken ~6-minute script with OpenAI (news-anchor style, no URLs).
   3. Render the script to MP3 with OpenAI TTS (chunked to respect the 4096-char limit).
   4. Upload + publish the episode to Transistor (which feeds Spotify via RSS).
 
@@ -16,7 +16,6 @@ Env vars (set as GitHub Actions secrets):
   DRIVE_FOLDER_ID       - the "Daily AI Brief" folder id (1v2w8Q56LpXPAmi3gXqwmaX6NVgBr3z00)
   GOOGLE_SA_JSON        - the full service-account JSON (paste as a secret)
   TTS_VOICE             - optional, defaults to "onyx"
-  FORCE                 - "1" to publish even if the newest brief isn't today's
 Deps:  pip install openai google-api-python-client google-auth requests
 """
 import os, sys, io, re, json, datetime, tempfile
@@ -34,7 +33,7 @@ VOICE              = os.environ.get("TTS_VOICE") or "onyx"   # empty string also
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-# ---------- 1. Pull from Drive ----------
+# ---------- 1. Pull the newest brief from Drive ----------
 def get_drive():
     creds = service_account.Credentials.from_service_account_info(
         json.loads(os.environ["GOOGLE_SA_JSON"]),
@@ -80,7 +79,7 @@ def html_to_text(html):
     text = re.sub(r"&amp;", "&", text); text = re.sub(r"&[a-z]+;", " ", text)
     return re.sub(r"\s+", " ", text).strip()
 
-# ---------- 2. Brief -> spoken script (fallback only) ----------
+# ---------- 2. Brief -> spoken script ----------
 def make_script(brief_text, date_label):
     prompt = f"""You are the voice of "The Forward Pass — AI Daily Brief", a ~6 minute
 daily audio brief for NTT DATA Belgium. Turn the brief below into a spoken script.
@@ -113,7 +112,13 @@ def synth(script, out_path):
         for i, part in enumerate(chunk(script)):
             resp = client.audio.speech.create(
                 model="gpt-4o-mini-tts", voice=VOICE, input=part,
-                instructions="Crisp, warm financial-news anchor. Measured pace, clear enunciation.",
+                instructions=(
+                    "Deliver like a seasoned broadcast news anchor with real energy and warmth — "
+                    "NOT flat or robotic. Vary pitch and pace throughout: lift into the opening of "
+                    "each story, land firm emphasis on the key numbers, company names and the word "
+                    "'net-new', then ease down on the takeaways. Use natural breaths and a short beat "
+                    "of silence between items. Sound genuinely engaged and conversational, as if "
+                    "briefing a smart colleague — light momentum, never a monotone read."),
                 response_format="mp3")
             fh.write(resp.content)
             print(f"  synth chunk {i+1} ok")
