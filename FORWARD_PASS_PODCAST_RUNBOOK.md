@@ -1,4 +1,7 @@
-# The Forward Pass — Daily Podcast · Operations Runbook
+# The Forward Pass — Podcast · Operations Runbook (Daily + Weekly)
+
+> Two pipelines share this repo and its secrets: the **daily** brief podcast (§1–§13,
+> `make_episode.py`) and the **~20-min weekly two-host podcast** (§14, `make_weekly_episode.py`).
 
 **Owner:** Fred Munster (munster.fred@gmail.com) · **Product:** AI Cure Newsroom
 **Last updated:** 2026-09-18 · **Status:** Live
@@ -210,10 +213,92 @@ design — never try to move the TTS/publish steps into the BAGEHOT task; they m
 ## 13. Reference IDs (non-secret)
 
 - Drive folder "Daily AI Brief": `1v2w8Q56LpXPAmi3gXqwmaX6NVgBr3z00`
+- Drive folder "Weekly AI Journal": `1YF23oNpM807KO-cQizSUjSDvl882J8H7`
 - BAGEHOT task (trigger): `trig_016dhi4hRzBsUq65bya5DoVk` · cron `30 4 * * *` UTC
-- Podcast workflow cron: `10 5 * * *` UTC (~07:10 Brussels)
+- Weekly Issue task (trigger): `trig_01DzMaT7usQR4NrynmJLZVpX` · cron `0 16 * * 0` UTC
+- Daily podcast workflow cron: `10 5 * * *` UTC (~07:10 Brussels)
+- Weekly podcast workflow cron: `15 6 * * 1` and `15 6 * * 2` UTC (~08:15 Brussels, Mon + Tue)
 - Slack channel (#all-ai-cure): `C0B9MTMUQCC`
 - Email draft recipients: munster.fred@gmail.com, frederic.munster@nttdata.com, alec.boyle@nttdata.com, pawel.andre@nttdata.com
+
+---
+
+## 14. The weekly podcast (`make_weekly_episode.py`)
+
+The weekly companion to the daily. **Same architecture** (Drive → GitHub Actions → OpenAI TTS →
+Transistor → Spotify), but it turns the full weekly **issue** of The Forward Pass into a
+**~20-minute two-host conversation** (a host + an analyst, two distinct voices).
+
+### 14.1 What it does
+1. Finds the newest **English** weekly issue in the "Weekly AI Journal" Drive folder
+   (`YYYY-MM-DD-the-forward-pass-issue-NNN.html`). "Newest" is by the **date in the filename**, so a
+   Drive re-upload/backfill of an older issue can't fool it; the FR edition, `-RUN-RECORD`,
+   `COMMISSIONED-longread`, `epoch` and `bound-volume` files are all excluded.
+2. **Freshness guard** — skips if that issue is older than `WEEKLY_FRESH_DAYS` (default 6) unless
+   forced, so a skipped week is never re-voiced.
+3. **Dedup guard** — skips if the show already has a weekly episode for that issue number (checked
+   against Transistor) unless forced, so re-runs and the Tue backup run never double-publish.
+4. Writes a **two-host script** with OpenAI (`WEEKLY_MODEL`, default `gpt-4o`), obeying the house
+   charter (no hype/banned words, numbers over adjectives, only what's in the issue, no invented
+   metrics or quotes, no URLs). A purpose-built script on Drive (`<issue-basename>_pod.txt`,
+   pre-tagged with `A:`/`B:` turns) is **preferred** if present — the same override pattern as
+   BAGEHOT's daily `_script.txt`.
+5. Renders each speaker turn with that speaker's voice (`gpt-4o-mini-tts`) and stitches the turns
+   into one MP3 (ffmpeg on the runner; byte-concat fallback).
+6. Uploads + publishes to Transistor — the **same show as the daily** by default.
+
+### 14.2 Timeline
+| Time (Brussels) | Actor | Action |
+|---|---|---|
+| Sun ~18:00 | Weekly Issue task | Builds the issue and uploads the HTML to the "Weekly AI Journal" Drive folder |
+| Mon 08:15 | GitHub Actions (cron `15 6 * * 1` UTC) | Runs `make_weekly_episode.py` → publishes the episode |
+| Tue 08:15 | GitHub Actions (cron `15 6 * * 2` UTC) | Backup run; the dedup guard makes it a no-op if Monday already published |
+
+### 14.3 Configuration (in addition to the daily's secrets)
+The weekly reuses `OPENAI_API_KEY`, `TRANSISTOR_API_KEY`, `TRANSISTOR_SHOW_ID`, `GOOGLE_SA_JSON`.
+
+**One required setup step:** share the **"Weekly AI Journal"** Drive folder (Viewer) with the
+**same service-account email** the daily already uses — otherwise the runner can't read the issue.
+
+**Optional secrets:**
+
+| Secret | Value / effect |
+|---|---|
+| `WEEKLY_DRIVE_FOLDER_ID` | Overrides the weekly folder id. Defaults to `1YF23oNpM807KO-cQizSUjSDvl882J8H7` in the script. |
+| `TRANSISTOR_SHOW_ID_WEEKLY` | Publish the weekly to a **separate** show. Leave unset → same show as the daily. |
+
+**Optional variables** (Settings → Variables — no code change, take effect next run):
+
+| Variable | Default | Notes |
+|---|---|---|
+| `TTS_VOICE_A` | `marin` | Host voice |
+| `TTS_VOICE_B` | `cedar` | Analyst voice (must differ from the host for the two-voice effect) |
+| `HOST_A_NAME` | `Alex` | Host name spoken in the show |
+| `HOST_B_NAME` | `Sam` | Analyst name spoken in the show |
+| `WEEKLY_TARGET_MINUTES` | `20` | Target length (drives the word budget) |
+| `WEEKLY_MODEL` | `gpt-4o` | Model used to write the script |
+| `WEEKLY_FRESH_DAYS` | `6` | Max issue age (days) that still publishes |
+
+### 14.4 Common operations
+- **Test now / off-cadence:** Repo → Actions → "Weekly Forward Pass Podcast" → **Run workflow** →
+  tick **force** (bypasses both guards — needed before a fresh issue exists, or to re-voice).
+- **Change the voices / hosts / length:** edit the Variables above.
+- **Hand-write a week's script:** drop `<issue-basename>_pod.txt` (tagged `A:`/`B:` turns) into the
+  Weekly AI Journal folder; the runner uses it verbatim instead of generating one.
+- **Pause / rollback / unpublish:** same as the daily (§12), on the "Weekly Forward Pass Podcast"
+  workflow.
+
+### 14.5 Weekly-specific troubleshooting
+| Symptom (Actions log) | Cause | Fix |
+|---|---|---|
+| `No English weekly issue HTML found` | Weekly folder not shared with the SA, or wrong folder id | Share the folder (Viewer) with the SA email; check `WEEKLY_DRIVE_FOLDER_ID` |
+| `Newest issue is N days old (> 6); skipping` | Freshness guard: no fresh issue | Expected if the issue didn't build; use **force** to override |
+| `Skipping (episode already exists)` | Dedup guard: already published this issue | Expected on the Tue backup run / re-runs; use **force** to re-voice |
+| `Parsed too few turns` | Model didn't return tagged `A:`/`B:` turns | Re-run; if persistent, check `WEEKLY_MODEL` / lower the temperature in `make_script` |
+| Both voices sound the same | `TTS_VOICE_A` == `TTS_VOICE_B` | Set them to two different voices |
+
+### 14.6 Cost (approximate)
+Script (`gpt-4o`) + ~20 min of two-voice TTS ≈ **$0.50–0.90 per week** — negligible on top of the daily.
 
 > Secrets (API keys, service-account JSON) live **only** in GitHub Actions secrets — never in this
 > document, the repo, or chat. If a key is exposed, rotate it immediately (§8).
