@@ -16,10 +16,12 @@ Flow:
      (default 6) unless FORCE=1 — so a skipped week is never re-voiced.
   3. Dedup guard: skip if the show already has an episode for this issue number
      (checked against Transistor) unless FORCE=1 — safe across re-runs/backfills.
-  4. Turn the issue into a ~20-minute two-host script with OpenAI (host + analyst),
-     honouring the paper's anti-hype house charter (no hype words, numbers over
-     adjectives, only what's in the issue, no invented metrics/quotes, no URLs).
-     A purpose-built script on Drive (<issue-basename>_pod.txt) is preferred if present.
+  4. Turn the issue into a ~20-minute two-host script with OpenAI. The script is
+     built in SEGMENTS (open / bureaus / desks / deep / close) and stitched, so it
+     reliably reaches full length instead of the model wrapping up early. It honours
+     the paper's anti-hype house charter (no hype words, numbers over adjectives, only
+     what's in the issue, no invented metrics/quotes, no URLs). A purpose-built script
+     on Drive (<issue-basename>_pod.txt) is preferred if present.
   5. Render the script to MP3 with OpenAI TTS, one request per speaker turn using
      that speaker's voice, then stitch into a single MP3 (ffmpeg if available,
      else byte-concat).
@@ -67,10 +69,8 @@ SCRIPT_MODEL  = os.environ.get("WEEKLY_MODEL") or "gpt-4o"
 FRESH_DAYS    = int(os.environ.get("WEEKLY_FRESH_DAYS") or "6")
 FORCE         = os.environ.get("FORCE", "").lower() in ("1", "true", "yes")
 
-# ~150 spoken words/min; target the middle of a sensible band for TARGET_MIN.
+# ~150 spoken words/min.
 TARGET_WORDS  = int(TARGET_MIN * 150)
-WORDS_LO      = int(TARGET_WORDS * 0.92)
-WORDS_HI      = int(TARGET_WORDS * 1.12)
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
@@ -143,89 +143,134 @@ def html_to_text(html):
     text = re.sub(r"&[a-z]+;", " ", text)
     return re.sub(r"\s+", " ", text).strip()
 
-# ---------- 2. Issue -> two-host script ----------
+# ---------- 2. Issue -> two-host script (SEGMENTED, so it reaches full length) ----------
+SYSTEM = (
+    "You write audio scripts for 'The Forward Pass', an anti-hype AI newsletter for AI leaders "
+    "(engineers, CAIOs, CEOs) in Belgium and abroad, published by NTT DATA Belgium's editor. "
+    "House charter you MUST obey: no hype; BANNED words game-changer / revolutionize / unleash / "
+    "supercharge; numbers over adjectives; every claim must come from the issue provided (invent "
+    "NOTHING — no metrics, no quotes, no companies, no dates that aren't in the text); attribute "
+    "company self-claims as claims, not facts.")
+
+# (topics, weight-of-total-words, is_first, is_last)
+SEGMENTS = [
+    ("Open the show — {A} welcomes listeners to The Forward Pass Weekly for {date}, then the two of "
+     "you lay out the week's thesis (the editor's note) and read the leadership dashboard / signal "
+     "board: which directional signals moved, and what each one means for an AI leader.",
+     0.20, True, False),
+    ("The Brussels (EU) desk and the Silicon Valley (US) desk, and the transatlantic read between "
+     "them: where model capability and regulatory obligation are each heading, and who they "
+     "ultimately land on.",
+     0.20, False, False),
+    ("The strongest desk leads of the week across frontier models, research, policy & ethics, "
+     "industry & economics, and enterprise adoption — go deep on the two or three that matter most "
+     "for a leader rather than listing all of them.",
+     0.22, False, False),
+    ("One real production deployment dissected (the results AND the gaps), the AI-economics angle "
+     "(cost per successful task, unit economics) where the issue covers it, then the Long Read's "
+     "central thesis and the Second Opinion's counterpoint.",
+     0.22, False, False),
+    ("The Watchlist and the Reckoning (which prior calls were graded a hit or a miss), then close "
+     "on the concrete moves from The Monday Brief and a clear sign-off that the full illustrated "
+     "edition, with every source, is in the reader's inbox.",
+     0.16, False, True),
+]
+
 def make_script(issue_text, issue_no, date_label):
-    system = (
-        "You write audio scripts for 'The Forward Pass', an anti-hype AI newsletter for "
-        "AI leaders (engineers, CAIOs, CEOs) in Belgium and abroad, published by NTT DATA "
-        "Belgium's editor. House charter you MUST obey: no hype; BANNED words "
-        "game-changer / revolutionize / unleash / supercharge; numbers over adjectives; "
-        "every claim must come from the issue provided (invent NOTHING — no metrics, no "
-        "quotes, no companies, no dates that aren't in the text); attribute company "
-        "self-claims as claims, not facts.")
-    prompt = f"""Turn this week's issue (Issue {issue_no}, {date_label}) of The Forward Pass
-into a natural, engaging TWO-HOST podcast conversation of about {TARGET_MIN} minutes
-(roughly {WORDS_LO}-{WORDS_HI} spoken words total).
+    body = issue_text[:90000]
+    out = []
+    for i, (topics, weight, is_first, is_last) in enumerate(SEGMENTS):
+        seg_words = max(300, round(TARGET_WORDS * weight))
+        topics = topics.format(A=NAME_A, date=date_label)
+        pos = ("This is the OPENING of the episode."
+               if is_first else
+               "This CONTINUES an in-progress conversation — do NOT re-introduce the hosts or "
+               "re-welcome listeners; pick up naturally from where the last topic left off.")
+        endr = ("End the WHOLE episode here with a clear sign-off."
+                if is_last else
+                "Do NOT sign off or say goodbye — more of the show follows.")
+        first_line = ('Begin your output with one line "SUMMARY: <one or two sentences for the show '
+                      'notes>", then the dialogue.' if is_first else "Output only the dialogue.")
+        prompt = f"""You are writing SEGMENT {i+1} of {len(SEGMENTS)} of a SINGLE continuous
+~{TARGET_MIN}-minute two-host podcast episode for The Forward Pass Weekly (Issue {issue_no},
+{date_label}).
 
-The two hosts:
-- {NAME_A} = the HOST/anchor. Warm, sharp, drives the show: cold open, framing, crisp
-  transitions between topics, pulls the "so what for an AI leader" out of {NAME_B}, and
-  closes the show.
-- {NAME_B} = the ANALYST. Deeper technical and strategic read; explains mechanisms plainly,
-  lands the numbers, gives the boardroom implication. Occasionally pushes back or adds the
-  contrarian second opinion the issue raises.
+The two hosts: {NAME_A} = the host/anchor; {NAME_B} = the analyst (deeper technical and strategic
+read, lands the numbers, gives the boardroom implication, and sometimes pushes back).
 
-Make it a real conversation — they respond to each other, not two monologues. Substantial
-turns (roughly 50-90 words each), not rapid ping-pong; about 30-50 turns total.
+THIS SEGMENT covers ONLY: {topics}
 
-Cover, with editorial judgement (go DEEP on the ~8-10 most decision-relevant threads for an
-AI leader; do NOT try to mention every section):
-- a cold open + the week's thesis (From the Editor);
-- the leadership dashboard / signal board read (which signals moved and what it means for you);
-- Brussels (EU) and Silicon Valley (US) and their transatlantic read;
-- the strongest of the five desk leads (frontier, research, policy & ethics, industry &
-  economics, adoption & enterprise);
-- one real production deployment dissected (results AND gaps);
-- AI economics (cost per successful task, unit economics) where the issue covers it;
-- the Long Read thesis and the Second Opinion counterpoint;
-- the Watchlist / the Reckoning (what was graded hit or miss);
-- close with the concrete moves from The Monday Brief and a sign-off.
+Write about {seg_words} words of natural back-and-forth for THIS segment — substantial turns of
+roughly 60-90 words each (about {max(6, seg_words//75)} turns), a real conversation in which they
+respond to each other, not two monologues. {pos} {endr}
 
-Delivery rules: conversational and authoritative; NO URLs; NO markdown; NO section numbers;
-spell figures naturally ("about one point two trillion dollars", "roughly forty percent");
-gloss any jargon in five words the first time. Open with {NAME_A} saying, in their own words,
-that this is The Forward Pass Weekly for {date_label}. Close with a clear sign-off that the
-full illustrated edition, with every source, is in the reader's inbox.
-
-OUTPUT FORMAT — exactly this, nothing else:
-First line:  SUMMARY: <one or two sentences describing this episode for the show notes>
-Then the dialogue, one turn per line, each line starting with 'A: ' (for {NAME_A}) or
-'B: ' (for {NAME_B}). No blank lines, no names other than inside the spoken text, no stage
-directions.
+Rules: conversational and authoritative; obey the house charter (invent nothing — only what's in
+the issue below; no hype/banned words; numbers over adjectives; attribute company self-claims);
+NO URLs, NO markdown, NO section numbers; spell figures naturally ("about one point two trillion
+dollars"); gloss any jargon in five words on first use. {first_line}
+Output the dialogue with EACH turn on its own line, starting with exactly 'A: ' (for {NAME_A}) or
+'B: ' (for {NAME_B}). Use ONLY 'A:' and 'B:' as line prefixes — never names — and alternate speakers.
 
 ISSUE CONTENT:
-{issue_text[:100000]}"""
-    r = client.chat.completions.create(
-        model=SCRIPT_MODEL,
-        messages=[{"role": "system", "content": system},
-                  {"role": "user", "content": prompt}],
-        temperature=0.6)
-    return r.choices[0].message.content.strip()
+{body}"""
+        r = client.chat.completions.create(
+            model=SCRIPT_MODEL,
+            messages=[{"role": "system", "content": SYSTEM},
+                      {"role": "user", "content": prompt}],
+            temperature=0.6, max_tokens=1800)
+        seg_text = r.choices[0].message.content.strip()
+        wc = len(re.findall(r"\S+", seg_text))
+        print(f"  segment {i+1}/{len(SEGMENTS)}: ~{wc} words")
+        out.append(seg_text)
+    return "\n".join(out)
 
 def parse_script(raw):
-    """Return (summary, [(speaker, text), ...]). speaker is 'A' or 'B'."""
+    """Return (summary, [[speaker, text], ...]) with speaker in {'A','B'}.
+    Recognises 'A:' / 'B:' / 'HOST A:' / the configured host names as turn tags; if that
+    strict parse yields too few turns (a tag-format drift), re-parses permissively, treating
+    any 'Word: text' line as a turn and alternating speakers, so length is never lost."""
+    name_a, name_b = NAME_A.strip().lower(), NAME_B.strip().lower()
+    known = {"a": "A", "b": "B", "host a": "A", "host b": "B",
+             "hosta": "A", "hostb": "B", name_a: "A", name_b: "B"}
+    tag_re = re.compile(r"^\**\s*([A-Za-z][A-Za-z ]{0,14})\**\s*[:\u2013-]\s*(.+)$")
+
     summary = ""
-    turns = []
     for line in raw.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        if not summary and line.upper().startswith("SUMMARY:"):
+        if line.strip().upper().startswith("SUMMARY:"):
             summary = line.split(":", 1)[1].strip()
-            continue
-        m = re.match(r"^(?:HOST\s*)?([AB])\s*[:\-–]\s*(.+)$", line, re.I)
-        if m:
-            turns.append([m.group(1).upper(), m.group(2).strip()])
-        elif turns:
-            turns[-1][1] += " " + line  # continuation of the previous turn
-    # merge accidental consecutive same-speaker turns
-    merged = []
-    for sp, tx in turns:
-        if merged and merged[-1][0] == sp:
-            merged[-1][1] += " " + tx
-        else:
-            merged.append([sp, tx])
-    return summary, merged
+            break
+
+    def run(strict):
+        turns, last = [], "B"
+        for line in raw.splitlines():
+            line = line.strip()
+            if not line or line.upper().startswith("SUMMARY:"):
+                continue
+            m = tag_re.match(line)
+            sp = None
+            if m:
+                sp = known.get(m.group(1).strip().lower())
+                if sp is None and not strict:
+                    sp = "A" if last == "B" else "B"   # alternation fallback for unknown tags
+            if sp:
+                turns.append([sp, m.group(2).strip()]); last = sp
+            elif turns:
+                turns[-1][1] += " " + line              # continuation of the previous turn
+        merged = []
+        for sp, tx in turns:
+            if merged and merged[-1][0] == sp:
+                merged[-1][1] += " " + tx
+            else:
+                merged.append([sp, tx])
+        return merged
+
+    turns = run(strict=True)
+    if len(turns) < 12:                                 # strict A:/B: parse came up short
+        alt = run(strict=False)
+        if len(alt) > len(turns):
+            print(f"parse: strict gave {len(turns)} turns; using permissive parse ({len(alt)}).")
+            turns = alt
+    return summary, turns
 
 # ---------- 3. Script -> MP3 (per-turn voices, then stitch) ----------
 def synth_turn(text, voice, out_path):
@@ -334,7 +379,7 @@ if __name__ == "__main__":
 
     date_label = d.strftime("%A, %B %-d, %Y")
 
-    # prefer a purpose-built script; else generate from the issue HTML
+    # prefer a purpose-built script; else generate a segmented two-host script from the issue HTML
     raw = fetch_pod_script(drive, basename)
     if not raw:
         print("No purpose-built script on Drive; generating a two-host script from the issue.")
@@ -342,8 +387,7 @@ if __name__ == "__main__":
 
     summary, turns = parse_script(raw)
     words = sum(len(t.split()) for _, t in turns)
-    print(f"Script: {len(turns)} turns, ~{words} words "
-          f"(~{round(words/150)} min at 150 wpm)")
+    print(f"Script: {len(turns)} turns, ~{words} words (~{round(words/150)} min at 150 wpm)")
     if len(turns) < 6:
         sys.exit("Parsed too few turns — aborting rather than publishing a broken episode.")
 
