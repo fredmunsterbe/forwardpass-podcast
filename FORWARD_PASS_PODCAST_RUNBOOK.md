@@ -240,7 +240,9 @@ Transistor → Spotify), but it turns the full weekly **issue** of The Forward P
    against Transistor) unless forced, so re-runs and the Tue backup run never double-publish.
 4. Writes a **two-host script** with OpenAI (`WEEKLY_MODEL`, default `gpt-4o`), obeying the house
    charter (no hype/banned words, numbers over adjectives, only what's in the issue, no invented
-   metrics or quotes, no URLs). A purpose-built script on Drive (`<issue-basename>_pod.txt`,
+   metrics or quotes, no URLs). The script is built in **5 segments** (open · bureaus · desks · deep ·
+   close) and stitched, so it reliably reaches ~20 min instead of the model wrapping up early; length
+   is set by `WEEKLY_TARGET_MINUTES`. A purpose-built script on Drive (`<issue-basename>_pod.txt`,
    pre-tagged with `A:`/`B:` turns) is **preferred** if present — the same override pattern as
    BAGEHOT's daily `_script.txt`.
 5. Renders each speaker turn with that speaker's voice (`gpt-4o-mini-tts`) and stitches the turns
@@ -295,6 +297,7 @@ The weekly reuses `OPENAI_API_KEY`, `TRANSISTOR_API_KEY`, `TRANSISTOR_SHOW_ID`, 
 | `Newest issue is N days old (> 6); skipping` | Freshness guard: no fresh issue | Expected if the issue didn't build; use **force** to override |
 | `Skipping (episode already exists)` | Dedup guard: already published this issue | Expected on the Tue backup run / re-runs; use **force** to re-voice |
 | `Parsed too few turns` | Model didn't return tagged `A:`/`B:` turns | Re-run; if persistent, check `WEEKLY_MODEL` / lower the temperature in `make_script` |
+| **Episode too short** (e.g. ~4 min) | An old single-shot script generation; the model wraps up early | Fixed: the script is now built in **5 segments** and stitched. The log prints `segment k/5: ~N words` then `Script: … ~N words (~M min)`. To make it longer/shorter, raise/lower `WEEKLY_TARGET_MINUTES` (drives the per-segment word budget) or edit the `SEGMENTS` weights in `make_weekly_episode.py`. |
 | Both voices sound the same | `TTS_VOICE_A` == `TTS_VOICE_B` | Set them to two different voices |
 
 ### 14.6 Cost (approximate)
