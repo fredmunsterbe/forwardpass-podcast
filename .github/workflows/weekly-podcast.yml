@@ -1,0 +1,47 @@
+# .github/workflows/weekly-podcast.yml
+# Weekly: turn the latest Forward Pass issue on Drive into a ~20-min two-host
+# podcast episode via Transistor (same show as the daily by default).
+name: Weekly Forward Pass Podcast
+
+on:
+  schedule:
+    # The weekly issue is built Sunday ~16:00 UTC and lands on Drive Sun/Mon.
+    # Run Monday AND Tuesday morning (06:15 UTC ~ 08:15 Brussels); the dedup guard
+    # ensures exactly one episode per issue, so the Tuesday run only fires if the
+    # issue landed late and Monday found nothing.
+    - cron: "15 6 * * 1"
+    - cron: "15 6 * * 2"
+  workflow_dispatch:      # run manually from the Actions tab (tick "force" to test off-cadence)
+    inputs:
+      force:
+        description: "Publish even if the issue isn't fresh or was already published"
+        type: boolean
+        default: false
+
+jobs:
+  make-weekly-episode:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install openai google-api-python-client google-auth requests
+      - name: Make and publish the weekly episode
+        env:
+          OPENAI_API_KEY:            ${{ secrets.OPENAI_API_KEY }}
+          TRANSISTOR_API_KEY:        ${{ secrets.TRANSISTOR_API_KEY }}
+          TRANSISTOR_SHOW_ID:        ${{ secrets.TRANSISTOR_SHOW_ID }}
+          TRANSISTOR_SHOW_ID_WEEKLY: ${{ secrets.TRANSISTOR_SHOW_ID_WEEKLY }}  # optional; blank = same show
+          GOOGLE_SA_JSON:            ${{ secrets.GOOGLE_SA_JSON }}
+          WEEKLY_DRIVE_FOLDER_ID:    ${{ secrets.WEEKLY_DRIVE_FOLDER_ID }}     # optional; script has a default
+          # Two-host voices + names (repo Variables; script has defaults)
+          TTS_VOICE_A:           ${{ vars.TTS_VOICE_A }}
+          TTS_VOICE_B:           ${{ vars.TTS_VOICE_B }}
+          HOST_A_NAME:           ${{ vars.HOST_A_NAME }}
+          HOST_B_NAME:           ${{ vars.HOST_B_NAME }}
+          WEEKLY_TARGET_MINUTES: ${{ vars.WEEKLY_TARGET_MINUTES }}
+          WEEKLY_MODEL:          ${{ vars.WEEKLY_MODEL }}
+          WEEKLY_FRESH_DAYS:     ${{ vars.WEEKLY_FRESH_DAYS }}
+          FORCE:                 ${{ inputs.force }}
+        run: python make_weekly_episode.py
