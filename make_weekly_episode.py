@@ -20,7 +20,9 @@ Flow:
   4. Turn the issue into a ~20-minute two-host script with OpenAI. The script is
      built in 5 SEGMENTS (open / bureaus / desks / deep / close) and stitched, so it
      reliably reaches full length; each segment also yields one CHAPTER. It honours
-     the paper's anti-hype house charter. A purpose-built script on Drive
+     the paper's anti-hype house charter. If the issue carries the "Concepts of the
+     Week" recap (house format v3.23, <section id="concepts-of-the-week">), a sixth
+     segment / chapter walks through every concept of the week before the close. A purpose-built script on Drive
      (<issue-basename>_pod.txt) is preferred if present (no auto-chapters in that case).
   5. Render the script to MP3 with OpenAI TTS, one request per speaker turn using
      that speaker's voice, measure each segment's real duration, stitch into a single
@@ -140,6 +142,31 @@ def html_to_text(html_s):
     text = re.sub(r"&[a-z]+;", " ", text)
     return re.sub(r"\s+", " ", text).strip()
 
+CONCEPTS_ID = "concepts-of-the-week"
+CONCEPTS_END = "<!-- /concepts-of-the-week -->"
+
+def extract_concepts(html_s):
+    """Return the plain text of the issue's 'Concepts of the Week' recap (house format v3.23),
+    or "" when the issue has none. Primary: the block from the element carrying
+    id="concepts-of-the-week" to the closing comment marker; fallbacks: the next <section,
+    or a text search on the heading."""
+    m = re.search(r'id=["\']%s["\']' % CONCEPTS_ID, html_s, re.I)
+    if m:
+        start = html_s.rfind("<", 0, m.start())
+        end = html_s.find(CONCEPTS_END, m.end())
+        if end == -1:
+            nxt = html_s.find("<section", m.end())
+            end = nxt if nxt != -1 else min(len(html_s), m.end() + 40000)
+        return html_to_text(html_s[start:end])[:20000]
+    text = html_to_text(html_s)
+    k = text.lower().find("concepts of the week")
+    return text[k:k + 12000] if k != -1 else ""
+
+def count_concepts(concepts_text):
+    """Rough count of concept cards (each card prints its number as '#N')."""
+    nums = set(re.findall(r"#\s?(\d{1,4})\b", concepts_text))
+    return max(1, min(len(nums), 10)) if nums else 3
+
 # ---------- 2. Issue -> two-host script (SEGMENTED; each segment = one chapter) ----------
 SYSTEM = (
     "You write audio scripts for 'The Forward Pass', an anti-hype AI newsletter for AI leaders "
@@ -178,8 +205,21 @@ SEGMENTS = [
      0.16, False, True),
 ]
 
-def _segment_prompt(i, deftitle, topics, seg_words, is_first, is_last, issue_no, date_label, body):
-    topics = topics.format(A=NAME_A, date=date_label)
+# Optional 6th segment, inserted before the close when the issue has a Concepts of the Week
+# recap. Its word budget is ADDITIVE (does not squeeze the news segments): ~85 words per concept.
+CONCEPTS_TITLE = "Concepts of the Week"
+CONCEPTS_TOPICS = (
+    "the week's CONCEPTS OF THE DAY recap — the series that teaches AI champions one AI concept "
+    "per day. Walk through EVERY concept in the recap below, in number order, saying its number "
+    "(\"concept number twelve\"). For each one: {A} asks the question a smart non-specialist would "
+    "ask; {B} explains it in plain words with its analogy, says why it matters for an AI champion, "
+    "and lands its 'say it in a meeting' line. Connect them where the recap does (the week's "
+    "thread). Then name, in one or two lines, what is coming next week.")
+
+def _segment_prompt(i, deftitle, topics, seg_words, is_first, is_last, issue_no, date_label, body,
+                    n_segments=None, content_label="ISSUE CONTENT"):
+    topics = topics.format(A=NAME_A, B=NAME_B, date=date_label)
+    n_segments = n_segments or len(SEGMENTS)
     pos = ("This is the OPENING of the episode." if is_first else
            "This CONTINUES an in-progress conversation — do NOT re-introduce the hosts or re-welcome "
            "listeners; pick up naturally from where the last topic left off.")
@@ -189,7 +229,7 @@ def _segment_prompt(i, deftitle, topics, seg_words, is_first, is_last, issue_no,
     if is_first:
         header += ('\nThen one line "SUMMARY: <one or two sentences describing the whole episode for '
                    'the show notes>".')
-    return f"""You are writing SEGMENT {i+1} of {len(SEGMENTS)} of a SINGLE continuous
+    return f"""You are writing SEGMENT {i+1} of {n_segments} of a SINGLE continuous
 ~{TARGET_MIN}-minute two-host podcast episode for The Forward Pass Weekly (Issue {issue_no},
 {date_label}).
 
@@ -210,18 +250,31 @@ dollars"); gloss any jargon in five words on first use.
 Then the dialogue, EACH turn on its own line, starting with exactly 'A: ' (for {NAME_A}) or 'B: '
 (for {NAME_B}). Use ONLY 'A:' and 'B:' as line prefixes — never names — and alternate speakers.
 
-ISSUE CONTENT:
+{content_label}:
 {body}"""
 
-def generate_segments(issue_text, issue_no, date_label):
-    """Return (summary, [(chapter_title, [ [speaker, text], ... ]), ...])."""
+def build_plan(issue_text, concepts_text=""):
+    """List of segment specs: (deftitle, topics, seg_words, is_first, is_last, body, label, fixed_title).
+    The Concepts of the Week segment (if any) goes just before the closing segment."""
     body = issue_text[:90000]
+    plan = [(t, tp, max(300, round(TARGET_WORDS * w)), f, l, body, "ISSUE CONTENT", False)
+            for (t, tp, w, f, l) in SEGMENTS]
+    if concepts_text.strip():
+        n = count_concepts(concepts_text)
+        words = max(300, min(85 * n + 80, 750))
+        plan.insert(len(plan) - 1, (CONCEPTS_TITLE, CONCEPTS_TOPICS, words, False, False,
+                                    concepts_text, "CONCEPTS OF THE WEEK RECAP (from the issue)", True))
+    return plan
+
+def generate_segments(issue_text, issue_no, date_label, concepts_text=""):
+    """Return (summary, [(chapter_title, [ [speaker, text], ... ]), ...])."""
+    plan = build_plan(issue_text, concepts_text)
     summary = ""
     segs = []
-    for i, (deftitle, topics, weight, is_first, is_last) in enumerate(SEGMENTS):
-        seg_words = max(300, round(TARGET_WORDS * weight))
+    for i, (deftitle, topics, seg_words, is_first, is_last, body, label, fixed) in enumerate(plan):
         prompt = _segment_prompt(i, deftitle, topics, seg_words, is_first, is_last,
-                                 issue_no, date_label, body)
+                                 issue_no, date_label, body, n_segments=len(plan),
+                                 content_label=label)
         r = client.chat.completions.create(
             model=SCRIPT_MODEL,
             messages=[{"role": "system", "content": SYSTEM}, {"role": "user", "content": prompt}],
@@ -230,18 +283,18 @@ def generate_segments(issue_text, issue_no, date_label):
         title = deftitle
         for line in txt.splitlines():
             u = line.strip()
-            if u.upper().startswith("TITLE:"):
+            if u.upper().startswith("TITLE:") and not fixed:
                 title = (u.split(":", 1)[1].strip() or deftitle)[:70]
             if is_first and not summary and u.upper().startswith("SUMMARY:"):
                 summary = u.split(":", 1)[1].strip()
         turns = parse_turns(txt, min_turns=4)
         wc = sum(len(t.split()) for _, t in turns)
-        print(f"  segment {i+1}/{len(SEGMENTS)} '{title}': {len(turns)} turns, ~{wc} words")
+        print(f"  segment {i+1}/{len(plan)} '{title}': {len(turns)} turns, ~{wc} words")
         if turns:
             segs.append((title, turns))
     if not summary:
         summary = ("The week in AI for AI leaders — the signals that moved, Brussels and Silicon "
-                   "Valley, the desks that mattered, and the moves to make.")
+                   "Valley, the desks that mattered, the week's concepts, and the moves to make.")
     return summary, segs
 
 def parse_turns(text, min_turns=4):
@@ -460,8 +513,12 @@ if __name__ == "__main__":
         segments = [("__nochapter__", parse_turns(raw_pod, min_turns=12))]
     else:
         print("No purpose-built script on Drive; generating a two-host script from the issue.")
-        summary, segments = generate_segments(html_to_text(_download(drive, file_id)),
-                                              issue_no, date_label)
+        issue_html = _download(drive, file_id)
+        concepts_text = extract_concepts(issue_html)
+        print(f"Concepts of the Week recap: "
+              f"{'found, ~%d concepts' % count_concepts(concepts_text) if concepts_text else 'none in this issue'}")
+        summary, segments = generate_segments(html_to_text(issue_html), issue_no, date_label,
+                                              concepts_text=concepts_text)
 
     turns_total = sum(len(t) for _, t in segments)
     words = sum(len(x.split()) for _, t in segments for _, x in t)
