@@ -98,9 +98,17 @@ forwardpass-podcast/
    publishing, so a skipped BAGEHOT day never produces a duplicate. Override with `FORCE=1`.
 4. **fetch_script_text()** — prefers BAGEHOT's `AI_Daily_Brief_<date>_script.txt`. If missing,
    falls back to **make_script()**, which asks GPT to turn the brief HTML into a spoken script.
-   Since 2026-10-01 (Daily Brief spec v2.1) both paths carry the numbered **Concept of the Day**:
-   BAGEHOT's script includes a ~150-word concept segment, and the fallback extracts the brief's
-   `<div class="concept">` section (§07) via **concept_text()** and asks for the same segment.
+   Since 2026-10-01 (Daily Brief spec v2.1) both paths carry the numbered **Concept of the Day**.
+   From spec v2.2 the concept is a deep daily lesson, so BAGEHOT's script carries a ~300-word
+   concept mini-lesson (how it works, the worked example, where it breaks), and the fallback
+   extracts the brief's `<div class="concept">` section (§07) via **concept_text()** (anchored on
+   its `<p class="by">` by-line) and asks for the same mini-lesson. The fallback never names the
+   publisher's employer ("the Belgian desk").
+   **Feedback call-to-action (since 2026-10-01):** every daily episode invites listeners to send
+   feedback or AI tips to `FEEDBACK_EMAIL` (default theforwardpasschannel@gmail.com, spoken
+   "the forward pass channel at gmail dot com"). **ensure_feedback()** inserts the line before the
+   closing paragraph whenever the script (BAGEHOT's or the fallback) doesn't already mention it;
+   the show notes carry the address too.
 5. **synth()** — OpenAI `gpt-4o-mini-tts` renders the script to MP3, chunked to stay under the
    4096-character per-request limit, with a dynamic "news-anchor" delivery instruction.
 6. **publish()** — Transistor `authorize_upload` → PUT the MP3 → create episode → publish.
@@ -251,10 +259,16 @@ Transistor → Spotify), but it turns the full weekly **issue** of The Forward P
    **Concepts of the Week (since 2026-10-01, house format v3.23):** if the issue carries the recap
    block `<section … id="concepts-of-the-week"> … </section><!-- /concepts-of-the-week -->`,
    **extract_concepts()** pulls it out and a **sixth segment / chapter "Concepts of the Week"** is
-   inserted before the close. It walks through every concept of the week (number, plain-words
-   explanation with its analogy, why it matters, the "say it in a meeting" line). Its length is
-   **additive** (~85 words per concept, 300–750 words), so the news segments keep their time.
-   No recap in the issue → the episode is the usual 5 segments.
+   inserted before the close. Since house format v3.24 it is a **lesson**: the week's thread, every
+   concept taught in number order (how it works, the worked example or "going further" element,
+   where it breaks, the "say it in a meeting" line), then a deep pass on the issue's **deep dive of
+   the week** and one "test yourself" question. Its length is **additive** (~140 words per
+   concept + ~450 for the deep dive, 450–1,500 words), so the news segments keep their time.
+   No concepts section in the issue → the episode is the usual 5 segments.
+   **Feedback call-to-action:** the closing segment invites listeners to send feedback, questions
+   or AI tips to `FEEDBACK_EMAIL` (default theforwardpasschannel@gmail.com); **ensure_feedback_turn()**
+   inserts a host turn before the sign-off if the generated (or purpose-built) script omits it,
+   and the show notes carry a mailto link.
 5. Renders each speaker turn with that speaker's voice (`gpt-4o-mini-tts`) and stitches the turns
    into one MP3 (ffmpeg on the runner; byte-concat fallback).
 6. Uploads + publishes to Transistor — the **same show as the daily** by default.

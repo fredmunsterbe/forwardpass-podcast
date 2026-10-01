@@ -21,8 +21,11 @@ Flow:
      built in 5 SEGMENTS (open / bureaus / desks / deep / close) and stitched, so it
      reliably reaches full length; each segment also yields one CHAPTER. It honours
      the paper's anti-hype house charter. If the issue carries the "Concepts of the
-     Week" recap (house format v3.23, <section id="concepts-of-the-week">), a sixth
-     segment / chapter walks through every concept of the week before the close. A purpose-built script on Drive
+     Week" section (house format v3.23+, <section id="concepts-of-the-week">), a sixth
+     segment / chapter teaches every concept of the week and goes deep on the issue's
+     "deep dive of the week" before the close (v3.24 deepened the section). The close
+     always invites listeners to send feedback and AI tips to the show's mail address
+     (FEEDBACK_EMAIL). A purpose-built script on Drive
      (<issue-basename>_pod.txt) is preferred if present (no auto-chapters in that case).
   5. Render the script to MP3 with OpenAI TTS, one request per speaker turn using
      that speaker's voice, measure each segment's real duration, stitch into a single
@@ -45,6 +48,8 @@ Repo Variables (Settings > Variables), all optional with sensible defaults:
   WEEKLY_TARGET_MINUTES     - target length (default "20")
   WEEKLY_MODEL              - script model (default "gpt-4o")
   WEEKLY_FRESH_DAYS         - freshness window in days (default "6")
+  FEEDBACK_EMAIL            - address the hosts invite feedback / AI tips to
+                              (default "theforwardpasschannel@gmail.com")
 
 Deps:  pip install openai google-api-python-client google-auth requests mutagen
 """
@@ -74,6 +79,27 @@ FRESH_DAYS    = int(os.environ.get("WEEKLY_FRESH_DAYS") or "6")
 FORCE         = os.environ.get("FORCE", "").lower() in ("1", "true", "yes")
 
 TARGET_WORDS  = int(TARGET_MIN * 150)   # ~150 spoken words/min
+FEEDBACK_EMAIL = os.environ.get("FEEDBACK_EMAIL") or "theforwardpasschannel@gmail.com"
+
+def spoken_email(addr):
+    """'theforwardpasschannel@gmail.com' -> 'the forward pass channel at gmail dot com'."""
+    local, _, domain = addr.partition("@")
+    local = {"theforwardpasschannel": "the forward pass channel"}.get(local, local)
+    return f"{local} at {domain.replace('.', ' dot ')}"
+
+def ensure_feedback_turn(segments):
+    """Guarantee the episode invites feedback / AI tips by email: if the closing segment never
+    mentions the address, insert one host turn just before the final sign-off turn."""
+    if not segments:
+        return segments
+    title, turns = segments[-1]
+    if any("gmail" in t.lower() or "forward pass channel" in t.lower() for _, t in turns):
+        return segments
+    cta = ["A", (f"Before we go: tell us what you thought of this episode, or send us an AI tip "
+                 f"worth sharing. Write to {spoken_email(FEEDBACK_EMAIL)}. We read every message, "
+                 f"and the best tips may make it into a future issue.")]
+    turns = turns[:-1] + [cta] + turns[-1:] if len(turns) > 1 else turns + [cta]
+    return segments[:-1] + [(title, turns)]
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 ISSUE_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})-the-forward-pass-issue-(\d+)\.html$", re.I)
@@ -157,10 +183,10 @@ def extract_concepts(html_s):
         if end == -1:
             nxt = html_s.find("<section", m.end())
             end = nxt if nxt != -1 else min(len(html_s), m.end() + 40000)
-        return html_to_text(html_s[start:end])[:20000]
+        return html_to_text(html_s[start:end])[:32000]
     text = html_to_text(html_s)
     k = text.lower().find("concepts of the week")
-    return text[k:k + 12000] if k != -1 else ""
+    return text[k:k + 24000] if k != -1 else ""
 
 def count_concepts(concepts_text):
     """Rough count of concept cards (each card prints its number as '#N')."""
@@ -170,7 +196,7 @@ def count_concepts(concepts_text):
 # ---------- 2. Issue -> two-host script (SEGMENTED; each segment = one chapter) ----------
 SYSTEM = (
     "You write audio scripts for 'The Forward Pass', an anti-hype AI newsletter for AI leaders "
-    "(engineers, CAIOs, CEOs) in Belgium and abroad, published by NTT DATA Belgium's editor. "
+    "(engineers, CAIOs, CEOs) in Belgium and abroad, published by its editor in Brussels. "
     "House charter you MUST obey: no hype; BANNED words game-changer / revolutionize / unleash / "
     "supercharge; numbers over adjectives; every claim must come from the issue provided (invent "
     "NOTHING — no metrics, no quotes, no companies, no dates that aren't in the text); attribute "
@@ -200,25 +226,35 @@ SEGMENTS = [
      0.22, False, False),
     ("The Watchlist & the Monday Brief",
      "The Watchlist and the Reckoning (which prior calls were graded a hit or a miss), then close "
-     "on the concrete moves from The Monday Brief and a clear sign-off that the full illustrated "
-     "edition, with every source, is in the reader's inbox.",
+     "on the concrete moves from The Monday Brief. Just before the sign-off, {A} warmly invites "
+     "listeners to send feedback, questions or their own AI tips by email to {email} (say it as "
+     "{email_spoken}) — the editors read everything and the best tips may feature in a future "
+     "issue. Then a clear sign-off that the full illustrated edition, with every source, is in "
+     "the reader's inbox.",
      0.16, False, True),
 ]
 
 # Optional 6th segment, inserted before the close when the issue has a Concepts of the Week
-# recap. Its word budget is ADDITIVE (does not squeeze the news segments): ~85 words per concept.
+# section. Its word budget is ADDITIVE (does not squeeze the news segments): ~140 words per
+# concept plus ~450 for the deep dive of the week (v3.24: "we need to learn something").
 CONCEPTS_TITLE = "Concepts of the Week"
 CONCEPTS_TOPICS = (
-    "the week's CONCEPTS OF THE DAY recap — the series that teaches AI champions one AI concept "
-    "per day. Walk through EVERY concept in the recap below, in number order, saying its number "
-    "(\"concept number twelve\"). For each one: {A} asks the question a smart non-specialist would "
-    "ask; {B} explains it in plain words with its analogy, says why it matters for an AI champion, "
-    "and lands its 'say it in a meeting' line. Connect them where the recap does (the week's "
-    "thread). Then name, in one or two lines, what is coming next week.")
+    "the week's CONCEPTS OF THE DAY — the series that teaches AI champions one AI concept per day. "
+    "This is a LESSON, not a list: the listener should come away able to explain and apply each "
+    "idea. Open with the week's thread (how the concepts connect). Then teach EVERY concept below, "
+    "in number order, saying its number (\"concept number twelve\"): {A} asks the question a smart "
+    "non-specialist would ask; {B} explains how it works step by step with its analogy, walks "
+    "through the worked example or the 'going further' element with its numbers, names where it "
+    "breaks, and lands the 'say it in a meeting' line; {A} pushes back or asks for the practical "
+    "consequence. Then go DEEP on the section's 'deep dive of the week' (if present): the mechanism "
+    "in detail, the worked case and what experts disagree on — the longest part of this segment. "
+    "Then {A} poses one 'test yourself' question from the section and {B} answers it. Then name, in "
+    "one or two lines, what is coming next week. Teach only what the section says — invent nothing.")
 
 def _segment_prompt(i, deftitle, topics, seg_words, is_first, is_last, issue_no, date_label, body,
                     n_segments=None, content_label="ISSUE CONTENT"):
-    topics = topics.format(A=NAME_A, B=NAME_B, date=date_label)
+    topics = topics.format(A=NAME_A, B=NAME_B, date=date_label,
+                           email=FEEDBACK_EMAIL, email_spoken=spoken_email(FEEDBACK_EMAIL))
     n_segments = n_segments or len(SEGMENTS)
     pos = ("This is the OPENING of the episode." if is_first else
            "This CONTINUES an in-progress conversation — do NOT re-introduce the hosts or re-welcome "
@@ -261,7 +297,7 @@ def build_plan(issue_text, concepts_text=""):
             for (t, tp, w, f, l) in SEGMENTS]
     if concepts_text.strip():
         n = count_concepts(concepts_text)
-        words = max(300, min(85 * n + 80, 750))
+        words = max(450, min(140 * n + 450, 1500))
         plan.insert(len(plan) - 1, (CONCEPTS_TITLE, CONCEPTS_TOPICS, words, False, False,
                                     concepts_text, "CONCEPTS OF THE WEEK RECAP (from the issue)", True))
     return plan
@@ -278,7 +314,7 @@ def generate_segments(issue_text, issue_no, date_label, concepts_text=""):
         r = client.chat.completions.create(
             model=SCRIPT_MODEL,
             messages=[{"role": "system", "content": SYSTEM}, {"role": "user", "content": prompt}],
-            temperature=0.6, max_tokens=1800)
+            temperature=0.6, max_tokens=max(1800, int(seg_words * 2.4)))
         txt = r.choices[0].message.content.strip()
         title = deftitle
         for line in txt.splitlines():
@@ -443,6 +479,9 @@ def build_description(summary, chapters, issue_no, date_label):
         f"<p>The full illustrated edition of Issue {issue_no} ({html.escape(date_label)}), with "
         f"every source, is in your inbox. This is an AI-generated audio edition of The Forward Pass "
         f"— an anti-hype read on the week in AI for AI leaders.</p>")
+    parts.append(
+        f"<p>Feedback, questions or an AI tip to share? Write to "
+        f"<a href=\"mailto:{FEEDBACK_EMAIL}\">{FEEDBACK_EMAIL}</a> — we read everything.</p>")
     return "\n".join(parts)
 
 # ---------- 4. Transistor: dedup check + publish ----------
@@ -520,6 +559,7 @@ if __name__ == "__main__":
         summary, segments = generate_segments(html_to_text(issue_html), issue_no, date_label,
                                               concepts_text=concepts_text)
 
+    segments = ensure_feedback_turn(segments)
     turns_total = sum(len(t) for _, t in segments)
     words = sum(len(x.split()) for _, t in segments for _, x in t)
     print(f"Script: {turns_total} turns, ~{words} words (~{round(words/150)} min at 150 wpm)")

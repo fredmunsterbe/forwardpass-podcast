@@ -16,6 +16,8 @@ Env vars (set as GitHub Actions secrets):
   DRIVE_FOLDER_ID       - the "Daily AI Brief" folder id (1v2w8Q56LpXPAmi3gXqwmaX6NVgBr3z00)
   GOOGLE_SA_JSON        - the full service-account JSON (paste as a secret)
   TTS_VOICE             - optional, defaults to "onyx"
+  FEEDBACK_EMAIL        - optional; the address listeners are invited to write to with
+                          feedback / AI tips (default "theforwardpasschannel@gmail.com")
 Deps:  pip install openai google-api-python-client google-auth requests
 """
 import os, sys, io, re, json, datetime, tempfile
@@ -30,6 +32,27 @@ TRANSISTOR_API_KEY = os.environ["TRANSISTOR_API_KEY"]
 SHOW_ID            = os.environ["TRANSISTOR_SHOW_ID"]
 DRIVE_FOLDER_ID    = os.environ["DRIVE_FOLDER_ID"]
 VOICE              = os.environ.get("TTS_VOICE") or "onyx"   # empty string also falls back
+FEEDBACK_EMAIL     = os.environ.get("FEEDBACK_EMAIL") or "theforwardpasschannel@gmail.com"
+
+def spoken_email(addr):
+    """'theforwardpasschannel@gmail.com' -> 'the forward pass channel at gmail dot com'."""
+    local, _, domain = addr.partition("@")
+    local = {"theforwardpasschannel": "the forward pass channel"}.get(local, local)
+    return f"{local} at {domain.replace('.', ' dot ')}"
+
+FEEDBACK_LINE = (f"Got feedback on today's brief, or an AI tip worth sharing? Write to us at "
+                 f"{spoken_email(FEEDBACK_EMAIL)}. We read every message.")
+
+def ensure_feedback(script):
+    """Guarantee every episode invites feedback / AI tips by email: if the script never mentions
+    the address, insert the invitation as its own paragraph just before the closing paragraph."""
+    low = script.lower()
+    if "gmail" in low or "forward pass channel" in low:
+        return script
+    paras = [p for p in re.split(r"\n\s*\n", script.strip()) if p.strip()]
+    if len(paras) <= 1:
+        return script.rstrip() + "\n\n" + FEEDBACK_LINE + "\n"
+    return "\n\n".join(paras[:-1] + [FEEDBACK_LINE, paras[-1]]) + "\n"
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
@@ -73,8 +96,11 @@ def fetch_script_text(drive, date_iso):
     return _download(drive, files[0]["id"]).strip()
 
 def concept_text(html):
-    """The Daily Brief's Concept of the Day section (spec v2.1, <div class="concept">), as text."""
-    m = re.search(r'(?is)<div class="concept">(.*?)(?:<p class="by">|</div>\s*</div>)', html)
+    """The Daily Brief's Concept of the Day section (<div class="concept">), as text. Since
+    2026-10-01 the concept is a deep lesson with nested divs/figures, so anchor on its by-line
+    first and only fall back to the old closing-divs heuristic."""
+    m = (re.search(r'(?is)<div class="concept">(.*?)<p class="by">', html) or
+         re.search(r'(?is)<div class="concept">(.*?)</div>\s*</div>', html))
     return html_to_text(m.group(1)) if m else ""
 
 def html_to_text(html):
@@ -86,18 +112,20 @@ def html_to_text(html):
 
 # ---------- 2. Brief -> spoken script ----------
 def make_script(brief_text, date_label, concept=""):
-    concept_block = f"\nCONCEPT OF THE DAY SECTION:\n{concept[:4000]}" if concept else ""
-    prompt = f"""You are the voice of "The Forward Pass — AI Daily Brief", a ~6 minute
-daily audio brief for NTT DATA Belgium. Turn the brief below into a spoken script.
+    concept_block = f"\nCONCEPT OF THE DAY SECTION:\n{concept[:9000]}" if concept else ""
+    prompt = f"""You are the voice of "The Forward Pass — AI Daily Brief", a ~9 minute
+daily audio brief read for the Belgian desk. Turn the brief below into a spoken script.
 Rules: conversational but authoritative news-anchor tone; NO URLs, NO citations,
-NO markdown, no section numbers; spell figures naturally ("about 1.2 trillion dollars");
+NO markdown, no section numbers; never name the publisher's employer — say "the Belgian
+desk"; spell figures naturally ("about 1.2 trillion dollars");
 open with "From The Forward Pass, this is your AI Daily Brief for {date_label}.";
-cover the fresh items and the NTT DATA Belgium takeaway; then, if a CONCEPT OF THE DAY
-section is given below, a ~150-word segment that opens "Today's concept of the day, number N:
-<title>." and explains it in plain spoken English with its analogy, why it matters, and its
-"say it in a meeting" line; then a one-line "Watch next"; close with
-"That's your brief. The full report, with every source, is in your inbox." Keep it
-to roughly 1000-1100 words. Output ONLY the script text.
+go straight into the Lead, then the Belgian desk story and its takeaway, then the other fresh
+items, each told once; then, if a CONCEPT OF THE DAY section is given below, a ~300-word
+mini-lesson that opens "Today's concept of the day, number N: <title>." and teaches it in plain
+spoken English: its analogy, how it works step by step, the worked example with its numbers,
+one place it breaks, and its "say it in a meeting" line; then a one-line "Watch next"; then
+the line "{FEEDBACK_LINE}"; close with "That's your brief. The full report, with every
+source, is in your inbox." Keep it to roughly 1300-1500 words. Output ONLY the script text.
 
 BRIEF:
 {brief_text[:12000]}
@@ -176,10 +204,13 @@ if __name__ == "__main__":
     if not script:
         print("No spoken script on Drive; generating from the brief HTML.")
         script = make_script(html_to_text(html), date_label, concept_text(html))
+    script = ensure_feedback(script)
     print(f"Script: {len(script.split())} words")
     mp3 = os.path.join(tempfile.gettempdir(), f"forwardpass_{d.isoformat()}.mp3")
     synth(script, mp3)
     publish(mp3,
             title=f"AI Daily Brief — {date_label}",
-            summary="The Forward Pass Fresh Desk: net-new AI, macro and Belgium, read for NTT DATA Belgium. Full report and sources by email.")
+            summary=("The Forward Pass Fresh Desk: net-new AI, macro and Belgium, read for the Belgian "
+                     f"desk, plus the Concept of the Day. Full report and sources by email. Feedback "
+                     f"and AI tips: {FEEDBACK_EMAIL}"))
     print("Done.")
