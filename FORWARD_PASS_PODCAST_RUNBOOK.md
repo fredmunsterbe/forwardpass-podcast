@@ -4,7 +4,7 @@
 > `make_episode.py`) and the **~20-min weekly two-host podcast** (§14, `make_weekly_episode.py`).
 
 **Owner:** Fred Munster (munster.fred@gmail.com) · **Product:** AI Cure Newsroom
-**Last updated:** 2026-09-18 · **Status:** Live
+**Last updated:** 2026-10-01 · **Status:** Live
 
 This document describes the fully automated pipeline that turns the daily
 **AI Daily Brief** into an audio episode published to **Spotify**. It covers the
@@ -98,6 +98,9 @@ forwardpass-podcast/
    publishing, so a skipped BAGEHOT day never produces a duplicate. Override with `FORCE=1`.
 4. **fetch_script_text()** — prefers BAGEHOT's `AI_Daily_Brief_<date>_script.txt`. If missing,
    falls back to **make_script()**, which asks GPT to turn the brief HTML into a spoken script.
+   Since 2026-10-01 (Daily Brief spec v2.1) both paths carry the numbered **Concept of the Day**:
+   BAGEHOT's script includes a ~150-word concept segment, and the fallback extracts the brief's
+   `<div class="concept">` section (§07) via **concept_text()** and asks for the same segment.
 5. **synth()** — OpenAI `gpt-4o-mini-tts` renders the script to MP3, chunked to stay under the
    4096-character per-request limit, with a dynamic "news-anchor" delivery instruction.
 6. **publish()** — Transistor `authorize_upload` → PUT the MP3 → create episode → publish.
@@ -245,6 +248,13 @@ Transistor → Spotify), but it turns the full weekly **issue** of The Forward P
    is set by `WEEKLY_TARGET_MINUTES`. A purpose-built script on Drive (`<issue-basename>_pod.txt`,
    pre-tagged with `A:`/`B:` turns) is **preferred** if present — the same override pattern as
    BAGEHOT's daily `_script.txt`.
+   **Concepts of the Week (since 2026-10-01, house format v3.23):** if the issue carries the recap
+   block `<section … id="concepts-of-the-week"> … </section><!-- /concepts-of-the-week -->`,
+   **extract_concepts()** pulls it out and a **sixth segment / chapter "Concepts of the Week"** is
+   inserted before the close. It walks through every concept of the week (number, plain-words
+   explanation with its analogy, why it matters, the "say it in a meeting" line). Its length is
+   **additive** (~85 words per concept, 300–750 words), so the news segments keep their time.
+   No recap in the issue → the episode is the usual 5 segments.
 5. Renders each speaker turn with that speaker's voice (`gpt-4o-mini-tts`) and stitches the turns
    into one MP3 (ffmpeg on the runner; byte-concat fallback).
 6. Uploads + publishes to Transistor — the **same show as the daily** by default.

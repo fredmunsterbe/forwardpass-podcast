@@ -72,6 +72,11 @@ def fetch_script_text(drive, date_iso):
     print(f"Using BAGEHOT spoken script: {name}")
     return _download(drive, files[0]["id"]).strip()
 
+def concept_text(html):
+    """The Daily Brief's Concept of the Day section (spec v2.1, <div class="concept">), as text."""
+    m = re.search(r'(?is)<div class="concept">(.*?)(?:<p class="by">|</div>\s*</div>)', html)
+    return html_to_text(m.group(1)) if m else ""
+
 def html_to_text(html):
     html = re.sub(r"(?is)<style.*?</style>", " ", html)
     html = re.sub(r"(?is)<script.*?</script>", " ", html)
@@ -80,18 +85,23 @@ def html_to_text(html):
     return re.sub(r"\s+", " ", text).strip()
 
 # ---------- 2. Brief -> spoken script ----------
-def make_script(brief_text, date_label):
+def make_script(brief_text, date_label, concept=""):
+    concept_block = f"\nCONCEPT OF THE DAY SECTION:\n{concept[:4000]}" if concept else ""
     prompt = f"""You are the voice of "The Forward Pass — AI Daily Brief", a ~6 minute
 daily audio brief for NTT DATA Belgium. Turn the brief below into a spoken script.
 Rules: conversational but authoritative news-anchor tone; NO URLs, NO citations,
 NO markdown, no section numbers; spell figures naturally ("about 1.2 trillion dollars");
 open with "From The Forward Pass, this is your AI Daily Brief for {date_label}.";
-cover the fresh items and the NTT DATA Belgium takeaway; close with
+cover the fresh items and the NTT DATA Belgium takeaway; then, if a CONCEPT OF THE DAY
+section is given below, a ~150-word segment that opens "Today's concept of the day, number N:
+<title>." and explains it in plain spoken English with its analogy, why it matters, and its
+"say it in a meeting" line; then a one-line "Watch next"; close with
 "That's your brief. The full report, with every source, is in your inbox." Keep it
-to roughly 850-950 words. Output ONLY the script text.
+to roughly 1000-1100 words. Output ONLY the script text.
 
 BRIEF:
-{brief_text[:12000]}"""
+{brief_text[:12000]}
+{concept_block}"""
     r = client.chat.completions.create(
         model="gpt-4o", messages=[{"role": "user", "content": prompt}],
         temperature=0.4)
@@ -165,7 +175,7 @@ if __name__ == "__main__":
     script = fetch_script_text(drive, d.isoformat())
     if not script:
         print("No spoken script on Drive; generating from the brief HTML.")
-        script = make_script(html_to_text(html), date_label)
+        script = make_script(html_to_text(html), date_label, concept_text(html))
     print(f"Script: {len(script.split())} words")
     mp3 = os.path.join(tempfile.gettempdir(), f"forwardpass_{d.isoformat()}.mp3")
     synth(script, mp3)
