@@ -1,0 +1,61 @@
+# .github/workflows/special-podcast.yml
+# Special editions: one-off episodes (e.g. a full two-voice reading of a paper), declared by a
+# manifest in specials/*.json and read verbatim from a script on Drive.
+#   - Adding/editing a manifest on main renders it and uploads it to Transistor as a DRAFT
+#     bonus episode (status "draft"), or publishes it (status "published").
+#   - Flipping an existing manifest from "draft" to "published" just publishes the draft
+#     (no re-render), so the episode reaches Spotify via the RSS feed.
+name: Special Edition Podcast
+
+on:
+  push:
+    branches: [main]
+    paths: ["specials/**"]
+  workflow_dispatch:
+    inputs:
+      manifest:
+        description: "One manifest path, e.g. specials/2026-10-ai-economics.json (blank = all)"
+        type: string
+        default: ""
+      force:
+        description: "Re-render the audio even if the episode already exists"
+        type: boolean
+        default: false
+
+concurrency:
+  group: special-podcast
+  cancel-in-progress: false
+
+jobs:
+  make-special-episode:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+      - run: pip install openai google-api-python-client google-auth requests mutagen
+      - name: Make the special-edition episode(s)
+        env:
+          OPENAI_API_KEY:             ${{ secrets.OPENAI_API_KEY }}
+          TRANSISTOR_API_KEY:         ${{ secrets.TRANSISTOR_API_KEY }}
+          TRANSISTOR_SHOW_ID:         ${{ secrets.TRANSISTOR_SHOW_ID }}
+          TRANSISTOR_SHOW_ID_SPECIAL: ${{ secrets.TRANSISTOR_SHOW_ID_SPECIAL }}   # optional
+          GOOGLE_SA_JSON:             ${{ secrets.GOOGLE_SA_JSON }}
+          SPECIAL_DRIVE_FOLDER_ID:    ${{ secrets.SPECIAL_DRIVE_FOLDER_ID }}      # optional; script has a default
+          TTS_VOICE_A:                ${{ vars.TTS_VOICE_A }}
+          TTS_VOICE_B:                ${{ vars.TTS_VOICE_B }}
+          MANIFEST:                   ${{ inputs.manifest }}
+          FORCE:                      ${{ inputs.force }}
+          OUT_DIR:                    out
+        run: mkdir -p out && python make_special_episode.py
+      - name: Keep the MP3 for review (downloadable from the run page for 14 days)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: special-edition-audio
+          path: out/*.mp3
+          if-no-files-found: ignore
+          retention-days: 14

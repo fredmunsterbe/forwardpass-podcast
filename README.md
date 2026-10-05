@@ -9,6 +9,7 @@ Spotify.
 | Pipeline | Source | Output | Runner | Schedule (UTC) |
 |---|---|---|---|---|
 | **Daily** | newest `AI_Daily_Brief_*.html` (Drive) | ~6-min single-anchor brief | `make_episode.py` · `daily-podcast.yml` | `10 5 * * *` |
+| **Special edition** | a script on Drive + `specials/<slug>.json` manifest | one-off verbatim two-voice reading (e.g. a paper), draft-first | `make_special_episode.py` · `special-podcast.yml` | on push of `specials/**` |
 | **Weekly** | newest `*-the-forward-pass-issue-NNN.html` (Drive) | **~20-min two-host** conversation | `make_weekly_episode.py` · `weekly-podcast.yml` | `15 6 * * 1`, `15 6 * * 2` |
 
 The weekly publishes to the **same Transistor show** as the daily by default (set
