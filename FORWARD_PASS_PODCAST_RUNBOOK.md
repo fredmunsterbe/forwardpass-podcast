@@ -363,7 +363,7 @@ request) and the text is never altered.
 ### 15.3 Episodes
 | Slug | Script on Drive | Length | Status |
 |---|---|---|---|
-| `2026-10-ai-economics` | `2026-10-05-special-ai-economics_special.txt` | ~9,450 words, ~63 min, 15 chapters | draft (render on push 2026-10-05) |
+| `2026-10-ai-economics` | `2026-10-05-special-ai-economics_special.txt` | ~9,450 words, ~63 min, 15 chapters | published 2026-10-06 |
 
 ### 15.4 Cost
 ~63 min of two-voice TTS ≈ **$1–2** per render (`gpt-4o-mini-tts`); no script-model cost.
