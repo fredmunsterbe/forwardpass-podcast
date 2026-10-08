@@ -401,6 +401,10 @@ turns, one per line.
 - **Wait for the script**: before 12:00 Brussels (`LESSON_FALLBACK_HOUR`), a missing
   `_script.txt` means "not yet" → skip; from 12:00 on, generate it from the HTML (`LESSON_MODEL`,
   default gpt-4o, ~`LESSON_TARGET_MINUTES` = 14 min).
+  The fallback writes **one chapter per model call** (6 calls, ~350 words each, one retry if a
+  chapter comes back under 60%) — a single call stopped at ~500 words on the first real run
+  (2026-10-08, lesson #7 came out at ~3.5 min). Any script under 60% of the target length is
+  published with a `WARNING` line in the log.
 - Manual run: Actions → "Daily AI Lesson Podcast" → Run workflow → tick **force** to bypass all three.
   The MP3 is attached to every run for 14 days.
 

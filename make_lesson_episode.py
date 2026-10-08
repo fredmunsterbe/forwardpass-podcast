@@ -40,7 +40,7 @@ Env (GitHub Actions secrets/vars, shared with the other runners unless noted):
   TTS_VOICE_A / TTS_VOICE_B  tutor / learner voices (defaults "marin" / "cedar", as the weekly)
   LESSON_TUTOR_NAME / LESSON_LEARNER_NAME  spoken names in a generated script (Maria / Sam)
   LESSON_MODEL               model for the fallback script (default gpt-4o)
-  LESSON_TARGET_MINUTES      fallback script length (default 14)
+  LESSON_TARGET_MINUTES      fallback script length (default 14; generated chapter by chapter)
   LESSON_FALLBACK_HOUR       see step 4 (default 12)
   FEEDBACK_EMAIL             default theforwardpasschannel@gmail.com
   FORCE                      "true" to bypass the today-only, dedup and wait-for-script guards
@@ -225,41 +225,84 @@ def words_of(chapters):
     return sum(len(t.split()) for _, turns in chapters for _, t in turns)
 
 # ---------- fallback: lesson HTML -> two-voice script ----------
-def generate_script(meta, body, num, date_label, ctitle):
-    words = TARGET_MIN * 150
-    prompt = f"""You write the audio edition of "The Daily Lesson" from The Forward Pass: a
-~{TARGET_MIN}-minute two-voice tutorial (about {words} words) that teaches today's Concept of
-the Day to AI champions — business and tech people who know the basics but are not data
-scientists. Voice A is {TUTOR_NAME}, the tutor. Voice B is {LEARNER_NAME}, a curious AI champion
-who asks the questions a listener would ask, pushes back once or twice, and sometimes sums up
-in their own words. Teach — do not just summarise.
+# Generated ONE CHAPTER PER CALL and stitched (as the weekly does): asked for ~2,000 words in a
+# single call, models stop at ~500 (the first real run, 2026-10-08, came out at ~3.5 minutes).
+CHAPTER_PLAN = [
+    ("Why this matters to you",
+     "A concrete moment from an AI champion's working week where this concept decides something. "
+     "B recognises the situation; A says what today's lesson will make clear (one sentence, no "
+     "list of what's coming)."),
+    ("The idea and the words you need",
+     "The idea in one plain sentence, then in a short paragraph. Then the 4-6 words a listener "
+     "needs, each glossed in speech with an everyday example; B checks understanding by saying one "
+     "back in their own words."),
+    ("How it works, step by step",
+     "Walk through the mechanism step by step, describing the lesson's main picture in words so a "
+     "listener can see it. Then the lesson's analogy and exactly where it breaks. B asks 'but why' "
+     "at least once."),
+    ("The worked example",
+     "Go through the lesson's worked example slowly with its real numbers, said naturally; say "
+     "which numbers are illustrative. B does part of the arithmetic or reasoning out loud."),
+    ("In the wild, myths and where it breaks",
+     "The lesson's real cases (what happened, why the concept explains it), two or three myths "
+     "B has heard and A corrects, and the honest limits, risks and costs (what is established "
+     "versus still debated)."),
+    ("What to do with it",
+     "Decisions this affects; two questions to ask a vendor or your team; the 'say it in a "
+     "meeting' line; one check-yourself question that B answers aloud and A confirms; where to "
+     "keep learning (name the 'start here' pick and one university course, in words, no URLs)."),
+]
 
-FORMAT (strict): first line "SUMMARY: <one or two plain sentences>". Then 6 chapters, each
-starting with a line "## CHAPTER: <short chapter title>", followed by turns, one per line,
-"A: <text>" or "B: <text>". No other lines.
-CHAPTERS, in order: 1 Why this matters to you · 2 The idea and the words you need · 3 How it
-works, step by step (with the picture described in words) · 4 The worked example, with its real
-numbers · 5 In the wild, myths and where it breaks · 6 What to do with it (questions to ask, the
-"say it in a meeting" line, one check-yourself question answered aloud, and where to keep
-learning — name the "start here" pick and a university course in words, no URLs).
-RULES: plain spoken English; gloss every technical term on first use; say figures naturally
-("about two dollars per million words"); use only facts, numbers and cases that are in the
-lesson below — invent nothing; no URLs, citations, markdown, bullet points or section numbers;
-never name the publisher's employer; one fresh analogy at most and say where it breaks.
-Open with A: "From The Forward Pass, this is the Daily Lesson for {date_label}. Concept number
-{num}: {ctitle}." Include once, near the end, A saying exactly: "{FEEDBACK_LINE}"
-Close with A: "That's today's lesson. The full version, with every diagram and source, is in
-your inbox."
+def _chapter_prompt(i, title, brief, per, meta, body, num, date_label, ctitle, prev_tail):
+    first, last = i == 0, i == len(CHAPTER_PLAN) - 1
+    opening = (f'Start with A saying exactly: "From The Forward Pass, this is the Daily Lesson for '
+               f'{date_label}. Concept number {num}: {ctitle}."\n') if first else \
+              "Do NOT greet or re-introduce the show; continue naturally from the previous chapter.\n"
+    closing = (f'Near the end A says exactly: "{FEEDBACK_LINE}"\nThen end with A saying exactly: '
+               f'"That\'s today\'s lesson. The full version, with every diagram and source, is in '
+               f'your inbox."\n') if last else "Do NOT wrap up or say goodbye; the lesson continues.\n"
+    cont = f"\nTHE PREVIOUS CHAPTER ENDED WITH:\n{prev_tail}\n" if prev_tail else ""
+    return f"""You write chapter {i+1} of 6 of the audio edition of "The Daily Lesson" from The
+Forward Pass: a two-voice tutorial teaching today's Concept of the Day to AI champions —
+business and tech people who know the basics but are not data scientists. Voice A is
+{TUTOR_NAME}, the tutor (warm, patient). Voice B is {LEARNER_NAME}, a curious AI champion who
+asks what a listener would ask, pushes back once and sometimes sums up in their own words.
+Teach — do not summarise, and do not repeat what earlier chapters already explained.
 
+THIS CHAPTER: "{title}" — {brief}
+LENGTH: about {per} words (at least {int(per*0.85)}), 10-20 turns.
+{opening}{closing}FORMAT (strict): only lines "A: <text>" or "B: <text>", one turn per line. No
+chapter heading, no blank speaker names, no stage directions, no markdown.
+RULES: plain spoken English; gloss technical terms; say figures naturally ("about two dollars
+per million words"); use only facts, numbers, cases and analogies that are in the lesson below —
+invent nothing; no URLs, citations or section numbers; never name the publisher's employer.
+{cont}
 LESSON — {meta['eyebrow']}
 TITLE: {meta['h1']}
 DEK: {meta['dek']}
 
 {body[:45000]}"""
-    r = client.chat.completions.create(
-        model=MODEL, messages=[{"role": "user", "content": prompt}],
-        temperature=0.5, max_tokens=min(16000, int(words * 2.2) + 800))
-    return r.choices[0].message.content.strip()
+
+def generate_script(meta, body, num, date_label, ctitle):
+    per = int(TARGET_MIN * 150 / len(CHAPTER_PLAN))
+    out, prev_tail = [f"SUMMARY: {meta['dek'] or ctitle}"], ""
+    for i, (title, brief) in enumerate(CHAPTER_PLAN):
+        text = ""
+        for attempt in range(2):            # one retry if a chapter comes back far too short
+            r = client.chat.completions.create(
+                model=MODEL, temperature=0.5, max_tokens=min(4000, per * 3 + 400),
+                messages=[{"role": "user", "content": _chapter_prompt(
+                    i, title, brief, per, meta, body, num, date_label, ctitle, prev_tail)}])
+            text = r.choices[0].message.content.strip()
+            turns = [l for l in text.splitlines() if re.match(r"^\**[AB]\**\s*:", l.strip())]
+            n = sum(len(l.split()) for l in turns)
+            if n >= per * 0.6:
+                break
+            print(f"  chapter {i+1}: only {n} words, retrying")
+        print(f"  chapter {i+1} '{title}': {n} words")
+        out += [f"## CHAPTER: {title}"] + turns
+        prev_tail = "\n".join(turns[-3:])
+    return "\n".join(out)
 
 # ---------- audio ----------
 def merge_and_split(turns):
@@ -435,6 +478,9 @@ if __name__ == "__main__":
           f"{n_words} words (~{round(n_words/150)} min)")
     if n_words < 300:
         sys.exit("Script looks empty/broken — aborting.")
+    if n_words < TARGET_MIN * 150 * 0.6:
+        print(f"WARNING: script is short ({n_words} words, ~{round(n_words/150)} min) against a "
+              f"~{TARGET_MIN}-min target; publishing anyway.")
     summary = summary or meta["dek"] or f"Concept #{num}: {ctitle}."
 
     out_dir = os.environ.get("OUT_DIR") or tempfile.gettempdir()
