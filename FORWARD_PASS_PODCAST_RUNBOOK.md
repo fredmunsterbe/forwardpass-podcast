@@ -364,8 +364,8 @@ request) and the text is never altered.
 | Slug | Script on Drive | Length | Status |
 |---|---|---|---|
 | `2026-10-ai-economics` | `2026-10-05-special-ai-economics_special.txt` | ~9,450 words, ~63 min, 15 chapters | published 2026-10-06 |
-| `2026-10-enterprise-ai-platform` | `2026-10-08-special-enterprise-ai-platform_special.txt` | ~2,250 words, ~15 min, 10 chapters (guided tour, not verbatim) | draft 2026-10-08 |
-| `2026-10-european-data-spaces` | `2026-10-08-special-european-data-spaces_special.txt` | ~2,180 words, ~15 min, 11 chapters (guided tour, not verbatim) | draft 2026-10-08 |
+| `2026-10-enterprise-ai-platform` | `2026-10-08-special-enterprise-ai-platform_special.txt` | ~2,250 words, ~15 min, 10 chapters (guided tour, not verbatim) | published 2026-10-08 |
+| `2026-10-european-data-spaces` | `2026-10-08-special-european-data-spaces_special.txt` | ~2,180 words, ~15 min, 11 chapters (guided tour, not verbatim) | published 2026-10-08 |
 
 ### 15.4 Cost
 ~63 min of two-voice TTS ≈ **$1–2** per render (`gpt-4o-mini-tts`); no script-model cost.
