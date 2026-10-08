@@ -1,0 +1,63 @@
+# .github/workflows/lesson-podcast.yml
+# Daily: turn MONTESSORI's Daily Lesson on Drive into a ~12-15 min two-voice tutorial episode
+# (tutor + curious AI champion) on the same Transistor show as the daily brief.
+name: Daily AI Lesson Podcast
+
+on:
+  schedule:
+    # The lesson task runs at 08:22 Brussels and lands on Drive ~08:35-08:50.
+    # GitHub cron is UTC only, so we run three times; the today-only + dedup guards make
+    # sure exactly one episode is published per lesson.
+    #   07:40 UTC = 09:40 Brussels in summer time (08:40 in winter — usually too early, skips)
+    #   09:40 UTC = 11:40 / 10:40 Brussels
+    #   12:40 UTC = 14:40 / 13:40 Brussels — last chance; if MONTESSORI's spoken script is
+    #               missing by now, the script is generated from the lesson HTML instead.
+    - cron: "40 7 * * *"
+    - cron: "40 9 * * *"
+    - cron: "40 12 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Publish even if the lesson isn't today's, already has an episode, or has no spoken script yet"
+        type: boolean
+        default: false
+
+concurrency:
+  group: lesson-podcast
+  cancel-in-progress: false
+
+jobs:
+  make-lesson-episode:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+      - run: pip install openai google-api-python-client google-auth requests mutagen
+      - name: Make and publish the lesson episode
+        env:
+          OPENAI_API_KEY:            ${{ secrets.OPENAI_API_KEY }}
+          TRANSISTOR_API_KEY:        ${{ secrets.TRANSISTOR_API_KEY }}
+          TRANSISTOR_SHOW_ID:        ${{ secrets.TRANSISTOR_SHOW_ID }}
+          TRANSISTOR_SHOW_ID_LESSON: ${{ secrets.TRANSISTOR_SHOW_ID_LESSON }}   # optional; blank = same show
+          GOOGLE_SA_JSON:            ${{ secrets.GOOGLE_SA_JSON }}
+          LESSON_DRIVE_FOLDER_ID:    ${{ secrets.LESSON_DRIVE_FOLDER_ID }}      # optional; script has a default
+          TTS_VOICE_A:               ${{ vars.TTS_VOICE_A }}                    # tutor (default marin)
+          TTS_VOICE_B:               ${{ vars.TTS_VOICE_B }}                    # learner (default cedar)
+          LESSON_TARGET_MINUTES:     ${{ vars.LESSON_TARGET_MINUTES }}
+          LESSON_MODEL:              ${{ vars.LESSON_MODEL }}
+          FEEDBACK_EMAIL:            ${{ vars.FEEDBACK_EMAIL }}
+          FORCE:                     ${{ inputs.force }}
+          OUT_DIR:                   out
+        run: python make_lesson_episode.py
+      - name: Keep the MP3 for review (downloadable from the run page for 14 days)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lesson-audio
+          path: out/*.mp3
+          if-no-files-found: ignore
+          retention-days: 14

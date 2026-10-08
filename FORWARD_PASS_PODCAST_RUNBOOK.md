@@ -369,3 +369,49 @@ request) and the text is never altered.
 
 ### 15.4 Cost
 ~63 min of two-voice TTS ≈ **$1–2** per render (`gpt-4o-mini-tts`); no script-model cost.
+
+---
+
+## 16. The Daily Lesson podcast (`make_lesson_episode.py`)
+
+Added 2026-10-08. The audio companion to **MONTESSORI's Daily Lesson** — the learning paper that
+teaches the Daily Brief's Concept of the Day to AI champions (people who know the basics but are
+not data scientists). One episode per lesson, on the same Transistor show as the daily.
+
+### 16.1 Format
+A **~12–15-minute two-voice tutorial**: voice **A** is the tutor, voice **B** is a curious AI
+champion who asks the questions a listener would ask. Six chapters (why it matters · the idea and
+the words · how it works · worked example · in the wild / myths / where it breaks · what to do with
+it and where to keep learning). Chapters are embedded as ID3 marks and listed with timestamps in the
+episode description. Title: `Daily AI Lesson #N — <concept>` (the `Lesson #N` part is the dedup key).
+
+### 16.2 Hand-off
+| Time (Brussels) | Actor | Action |
+|---|---|---|
+| 08:22 | MONTESSORI task (`trig_01AVi9cKitM3Rq1rbQvyAc8x`) | Writes `YYYY-MM-DD-lesson-NNN-<concept>.html` **and** the spoken script `…_script.txt` (STEP 6b) to Drive "Daily AI Lessons" |
+| 09:40 (summer) / 10:40 (winter) | GitHub Actions `lesson-podcast.yml` | Reads lesson + script → TTS → Transistor |
+| 11:40 / 13:40–14:40 | later cron runs | No-ops once published; the **last** run generates the script from the HTML if MONTESSORI's script never arrived |
+
+The script uses the special-edition format: `SUMMARY:`, `## CHAPTER: <title>`, then `A:` / `B:`
+turns, one per line.
+
+### 16.3 Guards
+- **Today-only** (Europe/Brussels): skip if the newest lesson on Drive isn't today's.
+- **Dedup**: skip if the show already has an episode whose title contains `Lesson #N`.
+- **Wait for the script**: before 12:00 Brussels (`LESSON_FALLBACK_HOUR`), a missing
+  `_script.txt` means "not yet" → skip; from 12:00 on, generate it from the HTML (`LESSON_MODEL`,
+  default gpt-4o, ~`LESSON_TARGET_MINUTES` = 14 min).
+- Manual run: Actions → "Daily AI Lesson Podcast" → Run workflow → tick **force** to bypass all three.
+  The MP3 is attached to every run for 14 days.
+
+### 16.4 Setup
+1. **Share the Drive folder "Daily AI Lessons" (`1KzKPeDBOMe6fjAoIw-UctbhzVysKQ97e`) with the
+   same service-account email the daily uses, as Viewer.** Without
+   this the run fails with "No lesson HTML found".
+2. Reuses the existing secrets (`OPENAI_API_KEY`, `TRANSISTOR_API_KEY`, `TRANSISTOR_SHOW_ID`,
+   `GOOGLE_SA_JSON`) and the weekly's voices `TTS_VOICE_A` / `TTS_VOICE_B`.
+3. Optional: `TRANSISTOR_SHOW_ID_LESSON` (separate show), `LESSON_DRIVE_FOLDER_ID`,
+   vars `LESSON_TARGET_MINUTES`, `LESSON_MODEL`.
+
+### 16.5 Cost
+~14 min of two-voice TTS ≈ $0.20–0.40 per episode; the fallback script adds a few cents.
