@@ -40,6 +40,8 @@ def spoken_email(addr):
     local = {"theforwardpasschannel": "the forward pass channel"}.get(local, local)
     return f"{local} at {domain.replace('.', ' dot ')}"
 
+# Brussels hour from which a missing spoken script is replaced by one written from the HTML.
+FALLBACK_HOUR = int(os.environ.get("BRIEF_FALLBACK_HOUR") or 7)
 FEEDBACK_LINE = (f"Got feedback on today's brief, or an AI tip worth sharing? Write to us at "
                  f"{spoken_email(FEEDBACK_EMAIL)}. We read every message.")
 
@@ -166,6 +168,24 @@ def synth(script, out_path):
 TB = "https://api.transistor.fm/v1"
 H = {"x-api-key": TRANSISTOR_API_KEY}
 
+def already_published(title):
+    """Dedup guard: True if the show already has an episode with exactly this title.
+    Lets the workflow poll several times a morning without publishing twice."""
+    page = 1
+    while True:
+        r = requests.get(f"{TB}/episodes", headers=H, params={
+            "show_id": SHOW_ID, "pagination[page]": page, "pagination[per]": 50})
+        r.raise_for_status()
+        j = r.json()
+        for ep in j.get("data", []):
+            t = (ep.get("attributes", {}).get("title") or "").strip()
+            if t == title:
+                print(f"Already on the show: '{t}' (episode {ep['id']}).")
+                return True
+        if not j.get("data") or page >= int(j.get("meta", {}).get("totalPages", page)):
+            return False
+        page += 1
+
 def publish(mp3_path, title, summary):
     fn = os.path.basename(mp3_path)
     au = requests.get(f"{TB}/episodes/authorize_upload", headers=H,
@@ -199,9 +219,24 @@ if __name__ == "__main__":
         sys.exit(0)
 
     date_label = d.strftime("%A, %B %-d, %Y")
+    title = f"AI Daily Brief — {date_label}"
+    force = os.environ.get("FORCE", "").lower() in ("1", "true", "yes")
+    # dedup guard: the workflow polls several times each morning; publish once per brief.
+    if not force and already_published(title):
+        print("Skipping (episode for this brief already exists). Set FORCE=1 to override.")
+        sys.exit(0)
     # Prefer BAGEHOT's purpose-built spoken script; fall back to deriving from the HTML.
     script = fetch_script_text(drive, d.isoformat())
     if not script:
+        try:
+            from zoneinfo import ZoneInfo
+            hour = datetime.datetime.now(ZoneInfo("Europe/Brussels")).hour
+        except Exception:
+            hour = 99
+        if hour < FALLBACK_HOUR and not force:
+            print(f"Brief is on Drive but its spoken script is not yet; skipping — a later run "
+                  f"will pick it up (fallback from the HTML from {FALLBACK_HOUR}:00 Brussels).")
+            sys.exit(0)
         print("No spoken script on Drive; generating from the brief HTML.")
         script = make_script(html_to_text(html), date_label, concept_text(html))
     script = ensure_feedback(script)
@@ -209,7 +244,7 @@ if __name__ == "__main__":
     mp3 = os.path.join(tempfile.gettempdir(), f"forwardpass_{d.isoformat()}.mp3")
     synth(script, mp3)
     publish(mp3,
-            title=f"AI Daily Brief — {date_label}",
+            title=title,
             summary=("The Forward Pass Fresh Desk: net-new AI, macro and Belgium, read for the Belgian "
                      f"desk, plus the Concept of the Day. Full report and sources by email. Feedback "
                      f"and AI tips: {FEEDBACK_EMAIL}"))

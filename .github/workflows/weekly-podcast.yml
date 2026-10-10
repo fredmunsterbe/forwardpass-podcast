@@ -5,18 +5,25 @@ name: Weekly Forward Pass Podcast
 
 on:
   schedule:
-    # The weekly issue is built Sunday ~16:00 UTC and lands on Drive Sun/Mon.
-    # Run Monday AND Tuesday morning (06:15 UTC ~ 08:15 Brussels); the dedup guard
-    # ensures exactly one episode per issue, so the Tuesday run only fires if the
-    # issue landed late and Monday found nothing.
-    - cron: "15 6 * * 1"
-    - cron: "15 6 * * 2"
+    # Target: episode on Spotify before 08:30 Brussels on Sunday.
+    # The weekly issue runs Sunday 05:52 Brussels (fixed local time), lands on Drive ~06:35.
+    # GitHub cron is UTC only, so we poll Sunday every 30 min from 04:15 to 06:45 UTC
+    #   = 06:15-08:45 Brussels in summer time, 05:15-07:45 in winter
+    # (early runs find only last week's issue: older than WEEKLY_FRESH_DAYS, so they skip).
+    # Monday 05:15 UTC is a backup if the Sunday issue landed late. The dedup guard
+    # ensures exactly one episode per issue.
+    - cron: "15,45 4-6 * * 0"
+    - cron: "15 5 * * 1"
   workflow_dispatch:      # run manually from the Actions tab (tick "force" to test off-cadence)
     inputs:
       force:
         description: "Publish even if the issue isn't fresh or was already published"
         type: boolean
         default: false
+
+concurrency:
+  group: weekly-podcast
+  cancel-in-progress: false
 
 jobs:
   make-weekly-episode:

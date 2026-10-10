@@ -5,15 +5,15 @@ name: Daily AI Lesson Podcast
 
 on:
   schedule:
-    # The lesson task runs at 08:22 Brussels and lands on Drive ~08:35-08:50.
-    # GitHub cron is UTC only, so we run three times; the today-only + dedup guards make
-    # sure exactly one episode is published per lesson.
-    #   07:40 UTC = 09:40 Brussels in summer time (08:40 in winter — usually too early, skips)
-    #   09:40 UTC = 11:40 / 10:40 Brussels
-    #   12:40 UTC = 14:40 / 13:40 Brussels — last chance; if MONTESSORI's spoken script is
-    #               missing by now, the script is generated from the lesson HTML instead.
-    - cron: "40 7 * * *"
-    - cron: "40 9 * * *"
+    # Target: episode on Spotify before 08:30 Brussels, every day, summer and winter.
+    # The lesson task runs at 05:37 Brussels (fixed local time) and lands on Drive ~06:00-06:15.
+    # GitHub cron is UTC only, so we poll every 30 min from 03:10 to 06:40 UTC
+    #   = 05:10-08:40 Brussels in summer time, 04:10-07:40 in winter
+    # (early runs simply find no lesson for today and skip). The today-only + dedup guards
+    # make sure exactly one episode is published per lesson. From LESSON_FALLBACK_HOUR
+    # (07:00 Brussels) a missing spoken script is generated from the lesson HTML instead.
+    #   12:40 UTC = 14:40 / 13:40 Brussels — late safety net if everything above missed.
+    - cron: "10,40 3-6 * * *"
     - cron: "40 12 * * *"
   workflow_dispatch:
     inputs:
@@ -49,6 +49,7 @@ jobs:
           TTS_VOICE_B:               ${{ vars.TTS_VOICE_B }}                    # learner (default cedar)
           LESSON_TARGET_MINUTES:     ${{ vars.LESSON_TARGET_MINUTES }}
           LESSON_MODEL:              ${{ vars.LESSON_MODEL }}
+          LESSON_FALLBACK_HOUR:      ${{ vars.LESSON_FALLBACK_HOUR || '7' }}   # Brussels hour; was 12
           FEEDBACK_EMAIL:            ${{ vars.FEEDBACK_EMAIL }}
           FORCE:                     ${{ inputs.force }}
           OUT_DIR:                   out

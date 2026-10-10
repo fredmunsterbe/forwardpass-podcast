@@ -22,6 +22,27 @@ so the new episode appears in the show automatically. No human action is require
 
 ---
 
+## 1b. Morning delivery schedule — every episode on Spotify before 08:30 Brussels (since 2026-10-11)
+
+Goal (PROSPERO, 2026-10-10): readers have every daily and weekly edition, and its podcast, in the
+car before 08:30. All Claude tasks now run on **fixed Brussels time** (`CRON_TZ=Europe/Brussels`),
+so the end of summer time changes nothing for them. GitHub cron only speaks UTC, so each workflow
+**polls** over a window that covers both summer and winter time, and the guards (today-only /
+freshness, dedup, wait-for-script) make sure exactly one episode is published per edition.
+Episodes should reach the podcast host by ~07:00 because Spotify can take minutes to hours to pick
+them up.
+
+| Edition | Claude task (Brussels) | Lands on Drive | GitHub polling (UTC) | Summer / winter window (Brussels) | Fallback to HTML-made script |
+|---|---|---|---|---|---|
+| Daily Brief | 04:32 daily | ~05:05 | `5,25,45 3-6 * * *` | 05:05–08:45 / 04:05–07:45 | from 07:00 (`BRIEF_FALLBACK_HOUR`) |
+| Daily Lesson | 05:37 daily | ~06:00–06:15 | `10,40 3-6 * * *` + `40 12 * * *` | 05:10–08:40 / 04:10–07:40 | from 07:00 (`LESSON_FALLBACK_HOUR`) |
+| Weekly issue | Sun 05:52 (French twin 07:17) | ~06:35 | `15,45 4-6 * * 0` + Mon `15 5 * * 1` | Sun 06:15–08:45 / 05:15–07:45 | purpose-built `_pod.txt` if present, else from HTML |
+
+Other reader emails on the same plan: Daily Paper 05:07, Week in Review (Sat) 06:43 after the
+syllabus at 06:17. The times in the older sections below are kept for history.
+
+---
+
 ## 2. Architecture
 
 ![Forward Pass daily podcast pipeline](podcast_architecture.png)
@@ -136,8 +157,8 @@ forwardpass-podcast/
 | `TTS_VOICE` | `marin` | Current voice. Options: `marin`, `cedar`, `verse`, `ballad`, `sage`, `coral`, `onyx`, `nova`, `ash`, `alloy`, `shimmer`, `echo`, `fable` |
 
 ### Schedule
-`daily-podcast.yml` → `on.schedule.cron: "10 5 * * *"` (UTC) → ~07:10 Brussels. Keep it ~30–40 min
-after the BAGEHOT run (`30 4 * * *` UTC).
+`daily-podcast.yml` → `on.schedule.cron: "5,25,45 3-6 * * *"` (UTC) — polls every 20 min,
+05:05–08:45 Brussels in summer, 04:05–07:45 in winter. BAGEHOT runs at 04:32 Brussels. See §1b.
 
 ---
 
@@ -225,10 +246,12 @@ design — never try to move the TTS/publish steps into the BAGEHOT task; they m
 
 - Drive folder "Daily AI Brief": `1v2w8Q56LpXPAmi3gXqwmaX6NVgBr3z00`
 - Drive folder "Weekly AI Journal": `1YF23oNpM807KO-cQizSUjSDvl882J8H7`
-- BAGEHOT task (trigger): `trig_016dhi4hRzBsUq65bya5DoVk` · cron `30 4 * * *` UTC
-- Weekly Issue task (trigger): `trig_01DzMaT7usQR4NrynmJLZVpX` · cron `0 16 * * 0` UTC
-- Daily podcast workflow cron: `10 5 * * *` UTC (~07:10 Brussels)
-- Weekly podcast workflow cron: `15 6 * * 1` and `15 6 * * 2` UTC (~08:15 Brussels, Mon + Tue)
+- BAGEHOT task (trigger): `trig_016dhi4hRzBsUq65bya5DoVk` · cron `CRON_TZ=Europe/Brussels 32 4 * * *`
+- MONTESSORI lesson task (trigger): `trig_01AVi9cKitM3Rq1rbQvyAc8x` · cron `CRON_TZ=Europe/Brussels 37 5 * * *`
+- Weekly Issue task (trigger): `trig_01DzMaT7usQR4NrynmJLZVpX` · cron `CRON_TZ=Europe/Brussels 52 5 * * 0`
+- Daily podcast workflow cron: `5,25,45 3-6 * * *` UTC (polling; see §1b)
+- Lesson podcast workflow cron: `10,40 3-6 * * *` + `40 12 * * *` UTC (polling; see §1b)
+- Weekly podcast workflow cron: `15,45 4-6 * * 0` + `15 5 * * 1` UTC (Sunday polling + Monday backup)
 - Slack channel (#all-ai-cure): `C0B9MTMUQCC`
 - Email draft recipients: munster.fred@gmail.com, frederic.munster@nttdata.com, alec.boyle@nttdata.com, pawel.andre@nttdata.com
 
@@ -276,9 +299,9 @@ Transistor → Spotify), but it turns the full weekly **issue** of The Forward P
 ### 14.2 Timeline
 | Time (Brussels) | Actor | Action |
 |---|---|---|
-| Sun ~18:00 | Weekly Issue task | Builds the issue and uploads the HTML to the "Weekly AI Journal" Drive folder |
-| Mon 08:15 | GitHub Actions (cron `15 6 * * 1` UTC) | Runs `make_weekly_episode.py` → publishes the episode |
-| Tue 08:15 | GitHub Actions (cron `15 6 * * 2` UTC) | Backup run; the dedup guard makes it a no-op if Monday already published |
+| Sun 05:52 | Weekly Issue task | Builds the issue and uploads the HTML to the "Weekly AI Journal" Drive folder (~06:35) |
+| Sun every 30 min, 06:15–08:45 (summer) / 05:15–07:45 (winter) | GitHub Actions (cron `15,45 4-6 * * 0` UTC) | Runs `make_weekly_episode.py`; earlier runs skip (only last week's issue, too old) → publishes once |
+| Mon 07:15 / 06:15 | GitHub Actions (cron `15 5 * * 1` UTC) | Backup run; the dedup guard makes it a no-op if Sunday already published |
 
 ### 14.3 Configuration (in addition to the daily's secrets)
 The weekly reuses `OPENAI_API_KEY`, `TRANSISTOR_API_KEY`, `TRANSISTOR_SHOW_ID`, `GOOGLE_SA_JSON`.
@@ -388,9 +411,9 @@ episode description. Title: `Daily AI Lesson #N — <concept>` (the `Lesson #N` 
 ### 16.2 Hand-off
 | Time (Brussels) | Actor | Action |
 |---|---|---|
-| 08:22 | MONTESSORI task (`trig_01AVi9cKitM3Rq1rbQvyAc8x`) | Writes `YYYY-MM-DD-lesson-NNN-<concept>.html` **and** the spoken script `…_script.txt` (STEP 6b) to Drive "Daily AI Lessons" |
-| 09:40 (summer) / 10:40 (winter) | GitHub Actions `lesson-podcast.yml` | Reads lesson + script → TTS → Transistor |
-| 11:40 / 13:40–14:40 | later cron runs | No-ops once published; the **last** run generates the script from the HTML if MONTESSORI's script never arrived |
+| 05:37 | MONTESSORI task (`trig_01AVi9cKitM3Rq1rbQvyAc8x`) | Writes `YYYY-MM-DD-lesson-NNN-<concept>.html` **and** the spoken script `…_script.txt` (STEP 6b) to Drive "Daily AI Lessons" |
+| every 30 min, 05:10–08:40 (summer) / 04:10–07:40 (winter) | GitHub Actions `lesson-podcast.yml` | First run after the lesson lands (~06:10–06:40) reads lesson + script → TTS → Transistor; later runs are no-ops |
+| from 07:00 | same runs | If MONTESSORI's script never arrived, the script is generated from the HTML. 14:40 / 13:40 run = late safety net |
 
 The script uses the special-edition format: `SUMMARY:`, `## CHAPTER: <title>`, then `A:` / `B:`
 turns, one per line.
@@ -398,8 +421,9 @@ turns, one per line.
 ### 16.3 Guards
 - **Today-only** (Europe/Brussels): skip if the newest lesson on Drive isn't today's.
 - **Dedup**: skip if the show already has an episode whose title contains `Lesson #N`.
-- **Wait for the script**: before 12:00 Brussels (`LESSON_FALLBACK_HOUR`), a missing
-  `_script.txt` means "not yet" → skip; from 12:00 on, generate it from the HTML (`LESSON_MODEL`,
+- **Wait for the script**: before 07:00 Brussels (`LESSON_FALLBACK_HOUR`, set in the workflow;
+  the script's own default is still 12), a missing
+  `_script.txt` means "not yet" → skip; from 07:00 on, generate it from the HTML (`LESSON_MODEL`,
   default gpt-4o, ~`LESSON_TARGET_MINUTES` = 14 min).
 - Manual run: Actions → "Daily AI Lesson Podcast" → Run workflow → tick **force** to bypass all three.
   The MP3 is attached to every run for 14 days.

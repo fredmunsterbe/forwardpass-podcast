@@ -4,9 +4,20 @@ name: Daily AI Brief Podcast
 
 on:
   schedule:
-    # 05:10 UTC (~07:10 Brussels) — ~35 min after the BAGEHOT brief run at 04:30 UTC.
-    - cron: "10 5 * * *"
+    # Target: episode on Spotify before 08:30 Brussels, every day, summer and winter.
+    # BAGEHOT's brief runs at 04:32 Brussels (fixed local time) and lands on Drive ~05:05.
+    # GitHub cron is UTC only, so we poll every 20 min from 03:05 to 06:45 UTC
+    #   = 05:05-08:45 Brussels in summer time, 04:05-07:45 in winter.
+    # Guards in make_episode.py keep it to exactly one episode per brief: today-only,
+    # dedup (skips if the title already exists on the show), and wait-for-script
+    # (before 07:00 Brussels a missing spoken script means "come back next run";
+    # from 07:00 the script is written from the brief HTML instead).
+    - cron: "5,25,45 3-6 * * *"
   workflow_dispatch: {}   # lets you run it manually from the Actions tab for testing
+
+concurrency:
+  group: daily-podcast
+  cancel-in-progress: false
 
 jobs:
   make-episode:
@@ -25,4 +36,5 @@ jobs:
           DRIVE_FOLDER_ID:    ${{ secrets.DRIVE_FOLDER_ID }}
           GOOGLE_SA_JSON:     ${{ secrets.GOOGLE_SA_JSON }}
           TTS_VOICE:          ${{ vars.TTS_VOICE }}   # optional; defaults to onyx in the script
+          BRIEF_FALLBACK_HOUR: ${{ vars.BRIEF_FALLBACK_HOUR }}  # optional; default 7 (Brussels)
         run: python make_episode.py
