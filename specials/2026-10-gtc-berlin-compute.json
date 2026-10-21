@@ -3,5 +3,6 @@
   "title": "The Forward Pass — Special Edition — The Compute Issue: live from GTC Berlin",
   "script_file": "2026-10-21-special-gtc-berlin-compute_special.txt",
   "status": "published",
-  "credits": "Original script by The Forward Pass newsroom (guided tour of the special edition <em>The Compute Issue</em>, 21 October 2026). Company figures are the companies' own claims. The Forward Pass is an independent, personal publication."
+  "credits": "Original script by The Forward Pass newsroom (guided tour of the special edition <em>The Compute Issue</em>, 21 October 2026). Company figures are the companies' own claims. The Forward Pass is an independent, personal publication.",
+  "force": true
 }

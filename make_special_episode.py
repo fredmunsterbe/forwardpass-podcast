@@ -266,10 +266,19 @@ def create_episode(title, summary, desc, audio_url):
     r.raise_for_status()
     return r.json()["data"]["id"]
 
-def publish(eid):
-    requests.patch(f"{TB}/episodes/{eid}/publish", headers=H,
-                   data={"episode[status]": "published"}).raise_for_status()
-    print(f"PUBLISHED episode {eid} — it will reach Spotify via the RSS feed.")
+def publish(eid, tries=12, wait=30):
+    # A freshly uploaded episode is rejected until Transistor has processed its audio,
+    # so retry for a few minutes instead of failing the run.
+    import time
+    for i in range(tries):
+        r = requests.patch(f"{TB}/episodes/{eid}/publish", headers=H,
+                           data={"episode[status]": "published"})
+        if r.status_code < 400:
+            print(f"PUBLISHED episode {eid} — it will reach Spotify via the RSS feed.")
+            return
+        print(f"Publish attempt {i+1} failed ({r.status_code}: {r.text[:200]}); retrying in {wait}s.")
+        time.sleep(wait)
+    r.raise_for_status()
 
 # ---------- main ----------
 def run(manifest_path, drive):
@@ -304,6 +313,8 @@ def run(manifest_path, drive):
             "episode[audio_url]": audio_url, "episode[description]": desc,
             "episode[summary]": summary}).raise_for_status()
         eid = ep["id"]; print(f"Replaced audio on episode {eid}.")
+        if ep["attributes"].get("status") == "published":
+            return   # already public; the new audio is live once Transistor processes it
     else:
         eid = create_episode(title, summary, desc, audio_url)
         print(f"Created DRAFT episode {eid}: {title}")
