@@ -31,7 +31,7 @@ Behaviour per manifest (idempotent — safe to re-run):
     one TTS request per turn, long turns split at sentence boundaries), embed chapters,
     upload to Transistor as a BONUS episode. It stays a DRAFT unless status == "published".
   * episode exists as a draft and status == "published" -> publish it (no re-render).
-  * episode exists and FORCE=1                           -> re-render and replace its audio.
+  * episode exists and FORCE=1 (or "force": true in the manifest) -> re-render and replace its audio.
   * otherwise                                            -> nothing to do.
 
 Env (GitHub Actions secrets/vars, shared with the daily/weekly):
@@ -277,7 +277,8 @@ def run(manifest_path, drive):
     title, want = m["title"], (m.get("status") or "draft").lower()
     print(f"\n=== {m.get('slug', manifest_path)} — wanted status: {want}")
     ep = find_episode(title)
-    if ep and not FORCE:
+    force = FORCE or bool(m.get("force"))   # per-manifest one-shot re-render (remove the flag after the run starts)
+    if ep and not force:
         state = ep["attributes"].get("status")
         print(f"Episode exists: id {ep['id']}, status {state}")
         if want == "published" and state != "published":

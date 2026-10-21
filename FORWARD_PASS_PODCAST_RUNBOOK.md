@@ -377,7 +377,8 @@ Transistor → Spotify) and the same two voices as the weekly (`TTS_VOICE_A` / `
 3. To release: change the manifest to `"status": "published"` and push → the runner finds the
    draft by its exact title and publishes it (no re-render). Spotify picks it up from the RSS feed.
 4. To re-voice after fixing the script: Run workflow with **force** ticked → audio replaced on the
-   same episode.
+   same episode. Alternative without Actions access: add `"force": true` to the manifest and push; once
+   that run has started, remove the flag and push again (otherwise every later run re-renders it).
 
 The runner is idempotent: re-runs and other manifests' pushes never duplicate an episode
 (matched by exact title). Long turns are split at sentence boundaries (≤1,800 characters per TTS
@@ -390,8 +391,8 @@ request) and the text is never altered.
 | `2026-10-enterprise-ai-platform` | `2026-10-08-special-enterprise-ai-platform_special.txt` | ~2,250 words, ~15 min, 10 chapters (guided tour, not verbatim) | published 2026-10-08 |
 | `2026-10-european-data-spaces` | `2026-10-08-special-european-data-spaces_special.txt` | ~2,180 words, ~15 min, 11 chapters (guided tour, not verbatim) | published 2026-10-08 |
 | `2026-10-certified-knowledge` | `2026-10-13-special-certified-knowledge_special.txt` | ~3,050 words, ~20 min, 10 chapters (guided tour of the Daily Lesson #10 addendum, not verbatim) | published 2026-10-13 |
-| `2026-10-gtc-berlin-compute` | `2026-10-21-special-gtc-berlin-compute_special.txt` | ~4,670 words, ~31 min, 17 chapters (original guided tour of the GTC Berlin special edition, not verbatim) | draft 2026-10-21 |
-| `2026-10-claw-issue` | `2026-10-21-special-openclaw-agent-safety_special.txt` | ~2,930 words, ~20 min, 14 chapters (original guided tour of the OpenClaw / agent-safety special edition, not verbatim) | draft 2026-10-21 |
+| `2026-10-gtc-berlin-compute` | `2026-10-21-special-gtc-berlin-compute_special.txt` | ~5,350 words, ~36 min, 19 chapters (original guided tour of the GTC Berlin special edition, not verbatim) | published 2026-10-21 |
+| `2026-10-claw-issue` | `2026-10-21-special-openclaw-agent-safety_special.txt` | ~3,200 words, ~21 min, 15 chapters (original guided tour of the OpenClaw / agent-safety special edition, not verbatim) | published 2026-10-21 |
 
 ### 15.4 Cost
 ~63 min of two-voice TTS ≈ **$1–2** per render (`gpt-4o-mini-tts`); no script-model cost.
