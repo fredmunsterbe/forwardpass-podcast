@@ -391,6 +391,7 @@ request) and the text is never altered.
 | `2026-10-european-data-spaces` | `2026-10-08-special-european-data-spaces_special.txt` | ~2,180 words, ~15 min, 11 chapters (guided tour, not verbatim) | published 2026-10-08 |
 | `2026-10-certified-knowledge` | `2026-10-13-special-certified-knowledge_special.txt` | ~3,050 words, ~20 min, 10 chapters (guided tour of the Daily Lesson #10 addendum, not verbatim) | published 2026-10-13 |
 | `2026-10-gtc-berlin-compute` | `2026-10-21-special-gtc-berlin-compute_special.txt` | ~4,670 words, ~31 min, 17 chapters (original guided tour of the GTC Berlin special edition, not verbatim) | draft 2026-10-21 |
+| `2026-10-claw-issue` | `2026-10-21-special-openclaw-agent-safety_special.txt` | ~2,930 words, ~20 min, 14 chapters (original guided tour of the OpenClaw / agent-safety special edition, not verbatim) | draft 2026-10-21 |
 
 ### 15.4 Cost
 ~63 min of two-voice TTS ≈ **$1–2** per render (`gpt-4o-mini-tts`); no script-model cost.
