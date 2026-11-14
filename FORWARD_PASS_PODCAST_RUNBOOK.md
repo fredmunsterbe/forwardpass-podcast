@@ -394,6 +394,7 @@ request) and the text is never altered.
 | `2026-10-gtc-berlin-compute` | `2026-10-21-special-gtc-berlin-compute_special.txt` | ~5,350 words, ~36 min, 19 chapters (original guided tour of the GTC Berlin special edition, not verbatim) | published 2026-10-21 |
 | `2026-10-claw-issue` | `2026-10-21-special-openclaw-agent-safety_special.txt` | ~3,200 words, ~21 min, 15 chapters (original guided tour of the OpenClaw / agent-safety special edition, not verbatim) | published 2026-10-21 |
 | `2026-11-mistral-large-4` | `2026-11-04-special-mistral-large-4_special.txt` | ~3,300 words, ~22 min, 10 chapters (original guided tour of the Mistral Large 4 "Le Chonk, measured" special edition, not verbatim) | draft 2026-11-04 |
+| `2026-11-ai-bubble-eisman` | `2026-11-14-special-ai-bubble-eisman_special.txt` | ~5,080 words, ~34 min, 18 chapters (original guided tour of "The AI Bubble: Following the Money with Steve Eisman" special edition, not verbatim) | draft 2026-11-14 |
 
 ### 15.4 Cost
 ~63 min of two-voice TTS ≈ **$1–2** per render (`gpt-4o-mini-tts`); no script-model cost.
