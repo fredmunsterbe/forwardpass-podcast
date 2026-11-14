@@ -366,7 +366,7 @@ Transistor → Spotify) and the same two voices as the weekly (`TTS_VOICE_A` / `
 | Piece | Where | What |
 |---|---|---|
 | Script | Drive → *Weekly AI Journal* / **podcast-specials** (`1aRE8nhgt1RfiBqUdZSNPnM4JbmItGAoc`) | `<date>-special-<slug>_special.txt`: `TITLE:`, `SUMMARY:`, `## CHAPTER: <title>` lines, then `A:` / `B:` turns. Inherits the service account's Viewer share from the parent folder. Kept on Drive (not in this public repo) because it carries the full source text. |
-| Manifest | repo `specials/<slug>.json` | `title`, `script_file`, `status` (`draft` / `published`), `credits` (show-notes credit line). |
+| Manifest | repo `specials/<slug>.json` | `title`, `script_file`, `status` (`draft` / `published`), `credits` (show-notes credit line), optional `format_note` (replaces the default "word-for-word reading" line in the show notes — use it for guided tours). |
 | Runner | `make_special_episode.py` + `.github/workflows/special-podcast.yml` | Runs on every push to `main` that touches `specials/**`, or manually (Actions → "Special Edition Podcast" → Run workflow). |
 
 ### 15.2 Lifecycle (draft first: the publisher ratifies)
@@ -380,6 +380,7 @@ Transistor → Spotify) and the same two voices as the weekly (`TTS_VOICE_A` / `
    same episode. Alternative without Actions access: add `"force": true` to the manifest and push; once
    that run has started, remove the flag and push again (otherwise every later run re-renders it).
 
+The runner lists the show's episodes once per run (shared by all manifests) and backs off on Transistor's rate limit (HTTP 429), honouring `Retry-After`.
 The runner is idempotent: re-runs and other manifests' pushes never duplicate an episode
 (matched by exact title). Long turns are split at sentence boundaries (≤1,800 characters per TTS
 request) and the text is never altered.

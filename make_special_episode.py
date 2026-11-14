@@ -216,33 +216,57 @@ def ts(ms):
     s = int(ms // 1000); h, r = divmod(s, 3600); m, sec = divmod(r, 60)
     return f"{h}:{m:02d}:{sec:02d}" if h else f"{m}:{sec:02d}"
 
-def description(summary, marks, credits):
+def description(summary, marks, credits, note=None):
     out = [f"<p>{html.escape(summary)}</p>"]
     if credits:
         out.append(f"<p>{credits}</p>")
     if marks:
         out.append("<p><strong>Chapters</strong></p>\n<ul>" + "".join(
             f"<li>{ts(s)} — {html.escape(t)}</li>" for t, s, e in marks) + "</ul>")
-    out.append("<p>A special edition of The Forward Pass: a word-for-word reading by two "
+    out.append(f"<p>{html.escape(note)}</p>" if note else
+               "<p>A special edition of The Forward Pass: a word-for-word reading by two "
                "AI-generated voices. No commentary has been added to the text.</p>")
     out.append(f"<p>Feedback or an AI tip to share? Write to "
                f"<a href=\"mailto:{FEEDBACK_EMAIL}\">{FEEDBACK_EMAIL}</a>.</p>")
     return "\n".join(out)
 
 # ---------- Transistor ----------
+_EPISODES = None
+
+def _get(url, params=None, tries=6):
+    # Transistor allows ~10 requests per 10 s; back off on 429 instead of failing the run.
+    import time
+    for i in range(tries):
+        r = requests.get(url, headers=H, params=params)
+        if r.status_code != 429:
+            r.raise_for_status()
+            return r
+        wait = int(r.headers.get("Retry-After") or 10 * (i + 1))
+        print(f"Transistor rate limit (429); waiting {wait}s before retry {i+1}/{tries}.")
+        time.sleep(wait)
+    r.raise_for_status()
+
+def list_episodes():
+    # One paging pass per run, shared by every manifest (was one pass per manifest,
+    # which hit Transistor's rate limit once the show passed ~100 episodes).
+    global _EPISODES
+    if _EPISODES is None:
+        eps, page = [], 1
+        while True:
+            j = _get(f"{TB}/episodes", params={
+                "show_id": SHOW_ID, "pagination[page]": page, "pagination[per]": 50}).json()
+            eps.extend(j.get("data", []))
+            if not j.get("data") or page >= int(j.get("meta", {}).get("totalPages", page)):
+                break
+            page += 1
+        _EPISODES = eps
+    return _EPISODES
+
 def find_episode(title):
-    page = 1
-    while True:
-        r = requests.get(f"{TB}/episodes", headers=H, params={
-            "show_id": SHOW_ID, "pagination[page]": page, "pagination[per]": 50})
-        r.raise_for_status()
-        j = r.json()
-        for ep in j.get("data", []):
-            if (ep["attributes"].get("title") or "").strip() == title.strip():
-                return ep
-        if not j.get("data") or page >= int(j.get("meta", {}).get("totalPages", page)):
-            return None
-        page += 1
+    for ep in list_episodes():
+        if (ep["attributes"].get("title") or "").strip() == title.strip():
+            return ep
+    return None
 
 def upload_audio(mp3_path):
     au = requests.get(f"{TB}/episodes/authorize_upload", headers=H,
@@ -306,7 +330,8 @@ def run(manifest_path, drive):
     mp3 = os.path.join(out_dir, f"forwardpass_special_{m.get('slug', 'episode')}.mp3")
     marks = build_mp3(chapters, mp3)
     embed_chapters(mp3, marks)
-    desc = description(summary or m.get("summary", ""), marks, m.get("credits", ""))
+    desc = description(summary or m.get("summary", ""), marks, m.get("credits", ""),
+                       m.get("format_note"))
     audio_url = upload_audio(mp3)
     if ep:   # FORCE re-render: replace audio + notes on the existing episode
         requests.patch(f"{TB}/episodes/{ep['id']}", headers=H, data={
