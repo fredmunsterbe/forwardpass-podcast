@@ -396,6 +396,9 @@ request) and the text is never altered.
 | `2026-10-claw-issue` | `2026-10-21-special-openclaw-agent-safety_special.txt` | ~3,200 words, ~21 min, 15 chapters (original guided tour of the OpenClaw / agent-safety special edition, not verbatim) | published 2026-10-21 |
 | `2026-11-mistral-large-4` | `2026-11-04-special-mistral-large-4_special.txt` | ~3,300 words, ~22 min, 10 chapters (original guided tour of the Mistral Large 4 "Le Chonk, measured" special edition, not verbatim) | draft 2026-11-04 |
 | `2026-11-ai-bubble-eisman` | `2026-11-14-special-ai-bubble-eisman_special.txt` | ~5,080 words, ~34 min, 18 chapters (original guided tour of "The AI Bubble: Following the Money with Steve Eisman" special edition, not verbatim) | published 2026-11-14 |
+| `2026-11-ntt-rd-forum-part1-light` | `2026-11-20-special-ntt-rd-forum-part1-light_special.txt` | ~3,380 words, ~23 min, 13 chapters (guided tour, Part I of the NTT R&D Forum 2026 special extended edition, not verbatim) | draft 2026-11-20 |
+| `2026-11-ntt-rd-forum-part2-agents` | `2026-11-20-special-ntt-rd-forum-part2-agents_special.txt` | ~2,680 words, ~18 min, 14 chapters (guided tour, Part II, not verbatim) | draft 2026-11-20 |
+| `2026-11-ntt-rd-forum-part3-world` | `2026-11-20-special-ntt-rd-forum-part3-world_special.txt` | ~2,440 words, ~16 min, 11 chapters (guided tour, Part III, not verbatim) | draft 2026-11-20 |
 
 ### 15.4 Cost
 ~63 min of two-voice TTS ≈ **$1–2** per render (`gpt-4o-mini-tts`); no script-model cost.
