@@ -399,7 +399,7 @@ request) and the text is never altered.
 | `2026-11-ntt-rd-forum-part1-light` | `2026-11-20-special-ntt-rd-forum-part1-light_special.txt` | ~3,380 words, ~23 min, 13 chapters (guided tour, Part I of the NTT R&D Forum 2026 special extended edition, not verbatim) | draft 2026-11-20 |
 | `2026-11-ntt-rd-forum-part2-agents` | `2026-11-20-special-ntt-rd-forum-part2-agents_special.txt` | ~2,680 words, ~18 min, 14 chapters (guided tour, Part II, not verbatim) | draft 2026-11-20 |
 | `2026-11-ntt-rd-forum-part3-world` | `2026-11-20-special-ntt-rd-forum-part3-world_special.txt` | ~2,440 words, ~16 min, 11 chapters (guided tour, Part III, not verbatim) | draft 2026-11-20 |
-| `2026-11-knowledge-creation-seci-ba` | `2026-11-25-special-knowledge-creation-seci-ba_special.txt` | ~6,850 words, ~46 min, 19 chapters (original guided tour of the "Knowledge Is Made, Not Stored: SECI, Ba and Leadership" special extended edition, not verbatim) | draft 2026-11-25 |
+| `2026-11-knowledge-creation-seci-ba` | `2026-11-25-special-knowledge-creation-seci-ba_special.txt` | ~6,850 words, ~46 min, 19 chapters (original guided tour of the "Knowledge Is Made, Not Stored: SECI, Ba and Leadership" special extended edition, not verbatim) | published 2026-11-25 |
 
 ### 15.4 Cost
 ~63 min of two-voice TTS ≈ **$1–2** per render (`gpt-4o-mini-tts`); no script-model cost.
